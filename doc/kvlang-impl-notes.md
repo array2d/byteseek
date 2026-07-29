@@ -182,7 +182,7 @@ lb agent <name>      ≡     kvlang --entry <name>/init
 architecture.md 的 subagent 模型是对的，补充实现细节：
 
 ```kv
-def spawn_subagent(prompt:str, agent_type:str) -> (result:str) {
+def spawn_subagent(prompt:string, agent_type:string) -> (result:string) {
     # 1. 在 kvspace 准备子 agent 的输入
     session.create("claude-3-5-sonnet", "./system") -> "./sub_id"
     msg.append("./sub_id", "user", "./prompt")
@@ -216,7 +216,7 @@ architecture.md 的团队消息总线用 kvspace 实现天然正确，
 
 消费端：
 ```kv
-def teammate_loop(name:str) -> () {
+def teammate_loop(name:string) -> () {
     while (true) {
         kv.watch("/team/main/inbox/" + name, 60) -> "./msg"
         if ("./msg" != "") {
@@ -255,7 +255,7 @@ def teammate_loop(name:str) -> () {
    不会深入 `/session/42/msg/0/role`。需要两层 List 才能遍历消息树。
 
 5. **字符串拼接目前没有内建算子**  
-   `"prefix" + str_var` 还不存在。需要实现 `str.concat` builtin 或
+   `"prefix" + str_var` 还不存在。需要实现 `string.concat` builtin 或
    利用格式化 builtin。这是 Phase 1 就要解决的基础设施。
 
 ---
