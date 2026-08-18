@@ -1,0 +1,7 @@
+//! rwir `python.run(sid)`：跑 `action/arg` 里的 python3 代码，输出回填进 msg。
+
+use crate::engine::Engine;
+
+pub fn run(eng: &Engine, sid: &str) {
+    super::tool_run(eng, sid, "python", "python3", "-c");
+}

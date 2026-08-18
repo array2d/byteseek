@@ -1,0 +1,46 @@
+# byteseek 通用 agent 主循环
+#
+# agent 的"自己"全部活在 kvspace（redis）这一棵可寻址、可持久、可自改的 KV 树里：
+#   /session/{sid}/system      系统提示
+#   /session/{sid}/task        用户任务
+#   /session/{sid}/msg/*       对话历史（llm/shell/python 维护）
+#   /session/{sid}/action/*    当前动作（llm.call 解析 LLM 输出写入）
+#   /vthread/{vid}/‥pc         执行到哪一步（崩溃可恢复）
+#
+# llm / shell / python / agent 都是 rwir，由 byteseek 引擎（Rust）注册并处理。
+# 这段循环本身就是"相对固定的执行逻辑"，是数据也是代码，同在树中。
+
+rwfunc agentloop() -> () {
+	sid <- /byteseek/cursid
+	1 -> running
+	while (running == 1) {
+		llm.call(sid) -> kind
+
+		string.cmp(kind, "shell") -> csh
+		if (csh == 0) {
+			shell.run(sid)
+		}
+
+		string.cmp(kind, "python") -> cpy
+		if (cpy == 0) {
+			python.run(sid)
+		}
+
+		string.cmp(kind, "agent") -> cag
+		if (cag == 0) {
+			agent.spawn(sid)
+		}
+
+		string.cmp(kind, "final") -> cfi
+		if (cfi == 0) {
+			0 -> running
+		}
+	}
+}
+
+# 顶层调用：layout 会把它包进 init 帧。agentloop 必须在被调用的嵌套帧里执行，
+# 其内部 while 的 scope 才能正确寻址（直接 bootstrap 带 scope 的函数会失败）。
+# sid 从固定 KV 路径 /byteseek/cursid 读取（引擎每次 bootstrap 前写入当前 session id）。
+# 先把提示词播种进树（seed_prompts 定义在 prompt.kv，layout 时一并注册进 /lib）。
+seed_prompts()
+agentloop()

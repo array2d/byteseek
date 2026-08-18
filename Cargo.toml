@@ -1,0 +1,13 @@
+[package]
+name = "byteseek"
+version = "0.1.0"
+edition = "2021"
+description = "KV 原生 agent substrate —— agent 的自己（代码/状态/记忆/执行）全在一棵可寻址、可持久、可自改的 kvspace 树"
+
+[[bin]]
+name = "byteseek"
+path = "src/main.rs"
+
+[dependencies]
+libc = "0.2"
+serde_json = "1"
