@@ -25,7 +25,7 @@ corebrain 的 loop 形式完成任务的迭代执行。`doc/substrate.md` 的"�
 
 **阶段二 —— 扩展库成熟，corebrain 自主迭代 extbrain。**
 积累出大量成熟的 rwirext 扩展库；corebrain 拥有足够的存算资源，在 kvspace 架构下
-自主完成训练与推理，替换掉自己的 corebrain，进而管理、使用并迭代 extbrain。人从
+自主完成训练与推理，迭代升级自己的 corebrain/extbrain。人从
 "辅助造工具"退到"设定目标"，agent 开始自我改进推理核心。
 
 **阶段三 —— AGI。**
