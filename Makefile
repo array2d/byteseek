@@ -1,13 +1,14 @@
 # byteseek Makefile —— `make` 一键编译并安装到仓库根目录。
 #
-# 链接三方 durable(redis) .so（lib/ 被 gitignore，此处从相邻仓库构建产物同步）：
+# lib/   —— byteseek 自带的 .kv 代码（随仓库入库，启动时 layout 进 kvspace）。
+# libso/ —— 三方 durable(redis) .so（被 gitignore，此处从相邻仓库构建产物同步）：
 #   libkvspace_durable.so  ← ../kvspace-durable   (cargo, byteseek 自持 kvspace 句柄 + TLV)
 #   libkvlang_runtime.so   ← ../kvlang            (make durable, C runtime + rwirext 宿主)
 #   libkvlang_layout.so    ← ../kvlang            (make durable, Rust cdylib, .kv 编译入库)
 # runtime 与 layout 由 kvlang 的 `make durable` 一并产出（grouped target）。
 
 BIN     := byteseek
-LIB_DIR := lib
+LIB_DIR := libso
 WS      := ..
 KVLANG  := $(WS)/kvlang
 KVSPACE := $(WS)/kvspace-durable

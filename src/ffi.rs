@@ -40,12 +40,6 @@ unsafe extern "C" {
         out: *mut *mut u8,
         out_len: *mut u32,
     ) -> c_int;
-    pub fn kvspaceMkindex(
-        h: *mut c_void,
-        path: *const c_char,
-        err: *mut c_char,
-        err_cap: u32,
-    ) -> c_int;
     pub fn kvspaceNewCharByte(
         bytes: *const u8,
         len: u32,

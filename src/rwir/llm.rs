@@ -1,90 +1,73 @@
-//! rwir `llm.call(sid) -> kind`：按 session 的对话历史 + 系统提示调 LLM，
-//! 解析动作块写入 `action/*`，返回动作类型。
+//! rwir `llm.call(userinput) -> entry`：代码脑。
+//! 系统提示 = /byteseek/prompt/system（怎么生成）+ /lib/byteseek.kvlangbrief（kvlang 语法速览）。
+//! 调 LLM 产出 <name>/<kv>，包进 lib byteseek { lib session { lib NAME {…} } } 后 layout 入库，
+//! 返回构造出的入口名 byteseek/session/NAME.init（不信任 layout 的全局 find_entry）。
 //!
-//! LLM 的调用参数不硬编码：和提示词一样是 **KV 数据**，活在 `/byteseek/llm/*`
-//! （可寻址 / 可持久 / 可运行时自改）。字段取 OpenAI Chat Completions（DeepSeek、
-//! 各 OpenAI 兼容网关同款）与 Anthropic Messages 的公共参数集，逐项列举如下。
+//! LLM 调用参数是 KV 数据，活在 /byteseek/llm/*；api_key 只走环境变量 DEEPSEEK_API_KEY，绝不落树。
 
 use serde_json::{json, Value};
 use std::io::Write;
 use std::process::{Command, Stdio};
 
 use crate::engine::{Engine, DEFAULT_MODEL};
+use crate::rwir::kvlayout;
 
-/// LLM 调用配置。存于 `/byteseek/llm/<field>`；`model` 可被 `/session/{sid}/model` 覆盖。
+/// LLM 接口地址与鉴权 key 是 KV 数据：启动时 seed() 从环境读入，写入
+/// /byteseek/llm.api 与 /byteseek/llm.key；llm.call 默认取这两个路径（其余参数用内置默认）。
+const DEFAULT_URL: &str = "https://api.deepseek.com/chat/completions";
+
+/// 启动时把 LLM api 与 key 种进 kvspace（api 有默认值；key 来自 DEEPSEEK_API_KEY，可为空）。
+pub fn seed(eng: &Engine) {
+    let api = std::env::var("DEEPSEEK_API_URL").unwrap_or_else(|_| DEFAULT_URL.to_string());
+    let key = std::env::var("DEEPSEEK_API_KEY").unwrap_or_default();
+    eng.set_kv("/byteseek/llm.api", &api);
+    eng.set_kv("/byteseek/llm.key", &key);
+}
+
 pub struct LlmConfig {
-    pub url: String,            // 接口地址（OpenAI 兼容：{base}/chat/completions）
-    pub api_key: String,        // 鉴权：Authorization: Bearer <key>
-    pub model: String,          // 模型名
-    pub temperature: f64,       // 采样温度 0~2（越高越发散）
-    pub top_p: f64,             // 核采样阈值 0~1（与 temperature 二选一为宜）
-    pub max_tokens: u32,        // 生成 token 上限（Anthropic 为必填）
-    pub frequency_penalty: f64, // 频率惩罚 -2~2（抑制重复词）
-    pub presence_penalty: f64,  // 存在惩罚 -2~2（鼓励换话题）
-    pub stop: Vec<String>,      // 停止序列（命中即截断），逗号分隔
-    pub seed: Option<i64>,      // 随机种子（可复现），空则不带
-    pub timeout_s: u32,         // 单次请求超时（秒）
+    pub url: String,
+    pub api_key: String,
+    pub model: String,
+    pub temperature: f64,
+    pub top_p: f64,
+    pub max_tokens: u32,
+    pub frequency_penalty: f64,
+    pub presence_penalty: f64,
+    pub stop: Vec<String>,
+    pub seed: Option<i64>,
+    pub timeout_s: u32,
 }
 
 impl LlmConfig {
-    /// 从树读取；缺省时回落到内置默认（DeepSeek）。
-    pub fn load(eng: &Engine, sid: &str) -> Self {
-        let g = |k: &str| eng.get_kv(&format!("/byteseek/llm/{k}"));
-        let s_or = |v: String, d: &str| {
-            if v.trim().is_empty() {
-                d.to_string()
-            } else {
-                v
-            }
-        };
-        let f_or = |k: &str, d: f64| g(k).trim().parse().unwrap_or(d);
-
-        let model_sess = eng.get_kv(&format!("/session/{sid}/model"));
-        let model = if model_sess.trim().is_empty() {
-            s_or(g("model"), DEFAULT_MODEL)
+    pub fn load(eng: &Engine) -> Self {
+        let api = eng.get_kv("/byteseek/llm.api");
+        let url = if api.trim().is_empty() {
+            DEFAULT_URL.to_string()
         } else {
-            model_sess
-        };
-        let api_key = {
-            let k = g("api_key");
-            if k.trim().is_empty() {
-                std::env::var("DEEPSEEK_API_KEY").expect("DEEPSEEK_API_KEY 未设置")
-            } else {
-                k
-            }
+            api
         };
         LlmConfig {
-            url: s_or(g("url"), "https://api.deepseek.com/chat/completions"),
-            api_key,
-            model,
-            temperature: f_or("temperature", 0.2),
-            top_p: f_or("top_p", 1.0),
-            max_tokens: g("max_tokens").trim().parse().unwrap_or(4096),
-            frequency_penalty: f_or("frequency_penalty", 0.0),
-            presence_penalty: f_or("presence_penalty", 0.0),
-            stop: g("stop")
-                .split(',')
-                .map(|x| x.trim().to_string())
-                .filter(|x| !x.is_empty())
-                .collect(),
-            seed: g("seed").trim().parse().ok(),
-            timeout_s: g("timeout_s").trim().parse().unwrap_or(120),
+            url,
+            api_key: eng.get_kv("/byteseek/llm.key"),
+            model: DEFAULT_MODEL.to_string(),
+            temperature: 0.2,
+            top_p: 1.0,
+            max_tokens: 4096,
+            frequency_penalty: 0.0,
+            presence_penalty: 0.0,
+            stop: Vec::new(),
+            seed: None,
+            timeout_s: 120,
         }
     }
 
-    fn body(&self, sys: &str, msgs: &[(String, String)]) -> String {
-        let mut arr: Vec<Value> = vec![json!({"role":"system","content":sys})];
-        for (r, c) in msgs {
-            let role = if r == "assistant" {
-                "assistant"
-            } else {
-                "user"
-            };
-            arr.push(json!({"role":role,"content":c}));
-        }
-        let mut b = json!({
+    fn body(&self, sys: &str, user: &str) -> String {
+        let b = json!({
             "model": self.model,
-            "messages": arr,
+            "messages": [
+                {"role": "system", "content": sys},
+                {"role": "user", "content": user},
+            ],
             "temperature": self.temperature,
             "top_p": self.top_p,
             "max_tokens": self.max_tokens,
@@ -92,6 +75,7 @@ impl LlmConfig {
             "presence_penalty": self.presence_penalty,
             "stream": false,
         });
+        let mut b = b;
         if !self.stop.is_empty() {
             b["stop"] = json!(self.stop);
         }
@@ -101,9 +85,8 @@ impl LlmConfig {
         b.to_string()
     }
 
-    /// 经 curl 子进程发请求（避免引入 async 依赖），返回助手文本。
-    fn request(&self, sys: &str, msgs: &[(String, String)]) -> String {
-        let body = self.body(sys, msgs);
+    fn request(&self, sys: &str, user: &str) -> String {
+        let body = self.body(sys, user);
         let child = Command::new("curl")
             .args([
                 "-s",
@@ -123,73 +106,131 @@ impl LlmConfig {
             .spawn();
         let mut child = match child {
             Ok(c) => c,
-            Err(e) => return format!("<final>\ncurl 启动失败: {e}\n</final>"),
+            Err(e) => return format!("curl 启动失败: {e}"),
         };
         if let Some(mut sin) = child.stdin.take() {
             let _ = sin.write_all(body.as_bytes());
         }
         let out = match child.wait_with_output() {
             Ok(o) => o,
-            Err(e) => return format!("<final>\ncurl 执行失败: {e}\n</final>"),
+            Err(e) => return format!("curl 执行失败: {e}"),
         };
         let text = String::from_utf8_lossy(&out.stdout);
         match serde_json::from_str::<Value>(&text) {
             Ok(v) => v["choices"][0]["message"]["content"]
                 .as_str()
                 .map(|s| s.to_string())
-                .unwrap_or_else(|| format!("<final>\nLLM 无内容: {}\n</final>", text.trim())),
-            Err(_) => format!("<final>\nLLM 响应解析失败: {}\n</final>", text.trim()),
+                .unwrap_or_else(|| format!("LLM 无内容: {}", text.trim())),
+            Err(_) => format!("LLM 响应解析失败: {}", text.trim()),
         }
     }
 }
 
-/// rwir 入口：llm.call(sid) -> kind。
-pub fn call(eng: &Engine, sid: &str) -> String {
-    // 轮数每 session 独立，存在树里（子 agent 各拿满额度，不共享父预算）。
-    let n = eng
-        .get_kv(&format!("/session/{sid}/steps"))
-        .trim()
-        .parse()
-        .unwrap_or(0)
-        + 1;
-    eng.set_kv(&format!("/session/{sid}/steps"), &n.to_string());
-    if n > eng.max_steps {
-        let ans = "已达最大轮数上限，停止。";
-        eng.append_msg(sid, "assistant", ans);
-        eng.set_action(sid, "final", ans);
-        return "final".into();
+/// 代码脑入口：llm.call(userinput) -> entry。
+pub fn codegen(eng: &Engine, userinput: &str) -> String {
+    let brief = eng.get_kv("/lib/byteseek.kvlangbrief");
+    let sys = format!(
+        "{}\n\n=== kvlang 语法速览 ===\n{}",
+        eng.get_kv("/byteseek/prompt/system"),
+        brief
+    );
+    let cfg = LlmConfig::load(eng);
+    let user = format!(
+        "请把下面的需求翻译成一段 kvlang 程序。严格按系统提示的格式输出，只输出 <name>/<kv> 两段，不要解释：\n\n{userinput}"
+    );
+    let content = cfg.request(&sys, &user);
+    println!("\n🧠 [codegen]\n{}", content.trim());
+
+    let (raw_name, kv) = parse_program(&content);
+    let kv = if kv.trim().is_empty() {
+        // 兜底：没写 <kv> 标签时，剥掉可能的 ```kv 围栏，取整段。
+        strip_fence(&content)
+    } else {
+        kv
+    };
+    if kv.trim().is_empty() {
+        return "error: LLM 未产出 kvlang 程序".into();
     }
-    let cfg = LlmConfig::load(eng, sid);
-    let sys = eng.system_prompt();
-    let msgs = eng.read_msgs(sid);
-    let content = cfg.request(&sys, &msgs);
-    println!("\n🧠 [{sid} · 第{n}轮]\n{}", content.trim());
-    eng.append_msg(sid, "assistant", &content);
-    let (kind, arg) = parse_action(&content);
-    eng.set_action(sid, &kind, &arg);
-    kind
+
+    let k = eng.subs.get() + 1;
+    eng.subs.set(k);
+    let name = {
+        let base = sanitize(&raw_name);
+        if base.is_empty() {
+            format!("s{k}")
+        } else {
+            format!("{base}_{k}")
+        }
+    };
+
+    let wrapped = wrap_program(&name, &kv);
+    let v = kvlayout::vet(eng, &wrapped);
+    if v != "ok" {
+        return format!("error: vet 失败: {v}");
+    }
+    let entry = kvlayout::src(eng, &wrapped);
+    if entry.starts_with("error") {
+        return entry;
+    }
+    // 自造入口名，不信任 layout 的全局 find_entry（会返回预先存在的 byteseek.init）。
+    format!("byteseek/session/{name}.init")
 }
 
-/// 解析 LLM 输出里的动作块：取最先出现的 <tag>…</tag>。
-/// 容错：找到开标签但缺闭标签时（模型偶尔漏写），取到文本末尾。
-fn parse_action(content: &str) -> (String, String) {
-    let mut best: Option<(usize, &str, String)> = None;
-    for tag in ["shell", "python", "agent", "final"] {
-        let open = format!("<{tag}>");
-        let close = format!("</{tag}>");
-        if let Some(i) = content.find(&open) {
-            let start = i + open.len();
-            let inner = match content[start..].find(&close) {
-                Some(j) => content[start..start + j].trim().to_string(),
-                None => content[start..].trim().to_string(),
-            };
-            if best.as_ref().map_or(true, |(bi, _, _)| i < *bi) {
-                best = Some((i, tag, inner));
+/// 解析 <name>…</name> 与 <kv>…</kv>；取最先出现的标签。
+fn parse_program(content: &str) -> (String, String) {
+    let tag = |t: &str| -> String {
+        let open = format!("<{t}>");
+        let close = format!("</{t}>");
+        match content.find(&open) {
+            Some(i) => {
+                let start = i + open.len();
+                match content[start..].find(&close) {
+                    Some(j) => content[start..start + j].trim().to_string(),
+                    None => content[start..].trim().to_string(),
+                }
             }
+            None => String::new(),
         }
+    };
+    (tag("name"), tag("kv"))
+}
+
+/// 剥掉 ```kv / ``` 围栏。
+fn strip_fence(content: &str) -> String {
+    let mut s = content.trim().to_string();
+    if let Some(rest) = s.strip_prefix("```") {
+        s = rest.strip_prefix("kv").unwrap_or(rest).to_string();
     }
-    match best {
-        Some((_, tag, inner)) => (tag.to_string(), inner),
-        None => ("final".to_string(), content.trim().to_string()),
+    if s.ends_with("```") {
+        s = s.trim_end_matches("```").trim_end().to_string();
     }
+    s
+}
+
+/// 名字转成合法 kvlang 标识符：小写，非字母数字换成 `_`，禁止数字开头（前缀 s）。
+fn sanitize(name: &str) -> String {
+    let s: String = name
+        .trim()
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect();
+    let s = s.trim_matches('_').to_string();
+    if s.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+        format!("s{s}")
+    } else {
+        s
+    }
+}
+
+/// 包进 lib byteseek { lib session { lib NAME {…} } }，保证末尾有 main() 调用。
+fn wrap_program(name: &str, kv: &str) -> String {
+    let body = if kv.lines().any(|l| matches!(l.trim(), "main()" | "main();")) {
+        kv.trim().to_string()
+    } else {
+        format!("{}\nmain()", kv.trim())
+    };
+    format!(
+        "lib byteseek {{\nlib session {{\nlib {name} {{\n{body}\n}}\n}}\n}}"
+    )
 }

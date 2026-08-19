@@ -1,4 +1,5 @@
 /target/
-/lib/
+/libso/
 /reference/
 /byteseek
+*.bak

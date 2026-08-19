@@ -1,5 +1,5 @@
-//! Engine —— corebrain 的运行时核心：kvspace(redis) 读写、消息树、主导驱动 vthread。
-//! 具体 rwir（llm/shell/python/agent/io）分组在 `crate::rwir`。
+//! Engine —— byteseek 主脑运行时核心：kvspace(redis) 读写、talk 队列、主导驱动 vthread。
+//! 具体 rwir（llm/shell/python/io/kvlayout）分组在 `crate::rwir`。
 
 use std::cell::Cell;
 use std::ffi::{c_char, c_void};
@@ -8,15 +8,14 @@ use std::ptr::null_mut;
 use crate::ffi::*;
 use crate::rwir;
 
-pub const TOOL_CAP: usize = 4000; // 工具输出截断
+pub const TOOL_CAP: usize = 4000; // shell/python 工具输出截断
 pub const DEFAULT_MODEL: &str = "deepseek-v4-flash";
 
 pub struct Engine {
     pub rt: *mut c_void, // kvlang runtime 句柄
     pub kv: *mut c_void, // kvspace 句柄（byteseek 自持，同时传给 rwirext）
     pub dsn: String,     // kvspace DSN（layout rwir 需要）
-    pub max_steps: u32,  // 每个 session 的最大 LLM 轮数（BYTESEEK_MAX_STEPS）
-    pub subs: Cell<u32>,
+    pub subs: Cell<u32>, // 生成会话计数器，保证 session 名唯一
 }
 
 impl Engine {
@@ -57,18 +56,6 @@ impl Engine {
             s
         }
     }
-    pub fn mkindex(&self, path: &str) {
-        let mut err = [0u8; 256];
-        unsafe {
-            kvspaceMkindex(
-                self.kv,
-                cs(path).as_ptr(),
-                err.as_mut_ptr() as *mut c_char,
-                256,
-            )
-        };
-    }
-
     // rwir 派发时按下标解析读/写槽（rwirext 宿主 ABI，传 kvspace 句柄）
     pub fn read0(&self, pc: &str) -> String {
         take(unsafe { kvlang_rwirextResolveRead(self.kv, cs(pc).as_ptr(), 0) })
@@ -77,65 +64,30 @@ impl Engine {
         take(unsafe { kvlang_rwirextResolveWrite(self.kv, cs(pc).as_ptr(), 0) })
     }
 
-    // ── 消息树 ──────────────────────────────────────────────────────────
-    pub fn msg_count(&self, sid: &str) -> u32 {
-        self.get_kv(&format!("/session/{sid}/msg/count"))
+    // ── talk 队列：byteseek session 下的对话记录（input 落入此处，可寻址/持久）──
+    pub fn talk_push(&self, role: &str, content: &str) {
+        let n: u32 = self
+            .get_kv("/byteseek/session/talk/count")
             .trim()
             .parse()
-            .unwrap_or(0)
-    }
-    pub fn append_msg(&self, sid: &str, role: &str, content: &str) {
-        let n = self.msg_count(sid);
-        self.set_kv(&format!("/session/{sid}/msg/{n}/role"), role);
-        self.set_kv(&format!("/session/{sid}/msg/{n}/content"), content);
-        self.set_kv(&format!("/session/{sid}/msg/count"), &(n + 1).to_string());
-    }
-    pub fn read_msgs(&self, sid: &str) -> Vec<(String, String)> {
-        let n = self.msg_count(sid);
-        (0..n)
-            .map(|i| {
-                (
-                    self.get_kv(&format!("/session/{sid}/msg/{i}/role")),
-                    self.get_kv(&format!("/session/{sid}/msg/{i}/content")),
-                )
-            })
-            .collect()
-    }
-
-    // 系统提示从树里读（seed_prompts 已写入 /byteseek/prompt/system）。
-    pub fn system_prompt(&self) -> String {
-        self.get_kv("/byteseek/prompt/system")
-    }
-
-    pub fn seed_session(&self, sid: &str, task: &str) {
-        self.set_kv(&format!("/session/{sid}/model"), DEFAULT_MODEL);
-        self.set_kv(&format!("/session/{sid}/task"), task);
-        self.set_kv(&format!("/session/{sid}/steps"), "0");
-        self.set_kv(&format!("/session/{sid}/msg/count"), "0");
-        self.append_msg(sid, "user", task);
-    }
-
-    pub fn set_action(&self, sid: &str, kind: &str, arg: &str) {
-        self.set_kv(&format!("/session/{sid}/action/kind"), kind);
-        self.set_kv(&format!("/session/{sid}/action/arg"), arg);
-        if kind == "final" {
-            self.set_kv(&format!("/session/{sid}/final"), arg);
-        }
+            .unwrap_or(0);
+        self.set_kv(&format!("/byteseek/session/talk/{n}/role"), role);
+        self.set_kv(&format!("/byteseek/session/talk/{n}/content"), content);
+        self.set_kv("/byteseek/session/talk/count", &(n + 1).to_string());
     }
 
     pub fn register(&self) {
         rwir::register(self);
     }
 
-    // ── 主导驱动一个 session 直到 vthread 结束（模式2）──────────────────
-    // bootstrap 顶层 init 帧（同 term，无参）。init 里的 `agentloop()` 会在嵌套调用帧
-    // 执行，其 while scope 才能正确寻址。sid 经 /byteseek/cursid 传入。
-    pub fn run_entry(&self, session_id: &str) {
-        self.set_kv("/byteseek/cursid", session_id);
-        let fnc = cs("init");
+    // ── bootstrap 一个函数并主导驱动其 vthread 直到结束（模式2）──────────
+    // funcname 按最后一个点切分为 pkg/name（如 "byteseek.main"、"byteseek/session/x.init"）。
+    // 遇 ext rwir 就地 dispatch，再写回下一 pc。可重入：byteseek.run 在 dispatch 里嵌套调用本函数。
+    pub fn run_fn(&self, funcname: &str) {
+        let fnc = cs(funcname);
         let vid = take(unsafe { kvlangRuntimeBootstrap(self.rt, fnc.as_ptr(), null_mut(), 0) });
         if vid.is_empty() {
-            eprintln!("[byteseek] bootstrap init 失败");
+            eprintln!("[byteseek] bootstrap {funcname} 失败");
             return;
         }
         let vpc = format!("/vthread/{vid}/\u{2025}pc");
@@ -146,7 +98,9 @@ impl Engine {
                 break; // done
             }
             if rc != 1 {
-                eprintln!("[byteseek] execute_vthread 错误 rc={rc}");
+                let st = self.get_kv(&format!("/vthread/{vid}/\u{2025}status"));
+                let msg = self.get_kv(&format!("/vthread/{vid}/\u{2025}error/msg"));
+                eprintln!("[byteseek] vthread {vid} 错误 rc={rc} {st}: {msg}");
                 break;
             }
             let c = take(pc);
