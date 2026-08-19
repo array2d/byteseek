@@ -28,6 +28,8 @@ byteseek 不是又一个 agent 框架。区别在于：agent 的"自己"——�
 一个进程 = 一个 **corebrain**：把 `.kv` 布局进 redis → 注册 rwir → bootstrap
 一条 vthread → 主导驱动执行（kvlang 模式 2），遇到 rwir 就地处理。
 
+发展三阶段（roadmap）见 `README.md` / `README_CN.md`。
+
 ## 状态树布局
 
 ```
