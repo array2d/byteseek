@@ -48,7 +48,7 @@ impl LlmConfig {
         let api_key = {
             let k = g("api_key");
             if k.trim().is_empty() {
-                std::env::var("DEEPSEEK_API_KEY").unwrap_or_default()
+                std::env::var("DEEPSEEK_API_KEY").expect("DEEPSEEK_API_KEY 未设置")
             } else {
                 k
             }

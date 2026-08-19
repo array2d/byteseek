@@ -42,8 +42,7 @@ fn seed_llm_config(eng: &Engine, api_key: &str) {
 
 fn main() {
     let dsn = std::env::var("KVSPACE").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
-    let api_key = std::env::var("DEEPSEEK_API_KEY")
-        .unwrap_or_else(|_| "sk-0869e583abab4c21a7bca24aa5ec95c0".to_string());
+    let api_key = std::env::var("DEEPSEEK_API_KEY").expect("DEEPSEEK_API_KEY 未设置");
     let manifest = env!("CARGO_MANIFEST_DIR");
     // 提示词与执行逻辑都是 KV 文件：prompt.kv 先 layout（注册 seed_prompts），
     // agentloop.kv 的 init 里再 seed_prompts() + agentloop()。
