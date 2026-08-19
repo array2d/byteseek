@@ -3,7 +3,7 @@
 //! 调 LLM 产出 <name>/<kv>，包进 lib byteseek { lib session { lib NAME {…} } } 后 layout 入库，
 //! 返回构造出的入口名 byteseek/session/NAME.init（不信任 layout 的全局 find_entry）。
 //!
-//! LLM 调用参数是 KV 数据，活在 /byteseek/llm/*；api_key 只走环境变量 DEEPSEEK_API_KEY，绝不落树。
+//! LLM 调用参数是 KV 数据，活在 /byteseek/llm.api 与 /byteseek/llm.key（seed() 从环境读入写树）。
 
 use serde_json::{json, Value};
 use std::io::Write;
@@ -85,7 +85,8 @@ impl LlmConfig {
         b.to_string()
     }
 
-    fn request(&self, sys: &str, user: &str) -> String {
+    /// 发请求，返回 `(http 状态码, 原始响应体)`；curl 本身失败（启动/执行）走 Err。
+    fn request(&self, sys: &str, user: &str) -> Result<(u16, String), String> {
         let body = self.body(sys, user);
         let child = Command::new("curl")
             .args([
@@ -99,6 +100,8 @@ impl LlmConfig {
                 &format!("Authorization: Bearer {}", self.api_key),
                 "--data-binary",
                 "@-",
+                "-w",
+                "\n%{http_code}",
             ])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -106,23 +109,21 @@ impl LlmConfig {
             .spawn();
         let mut child = match child {
             Ok(c) => c,
-            Err(e) => return format!("curl 启动失败: {e}"),
+            Err(e) => return Err(format!("curl 启动失败: {e}")),
         };
         if let Some(mut sin) = child.stdin.take() {
             let _ = sin.write_all(body.as_bytes());
         }
         let out = match child.wait_with_output() {
             Ok(o) => o,
-            Err(e) => return format!("curl 执行失败: {e}"),
+            Err(e) => return Err(format!("curl 执行失败: {e}")),
         };
         let text = String::from_utf8_lossy(&out.stdout);
-        match serde_json::from_str::<Value>(&text) {
-            Ok(v) => v["choices"][0]["message"]["content"]
-                .as_str()
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| format!("LLM 无内容: {}", text.trim())),
-            Err(_) => format!("LLM 响应解析失败: {}", text.trim()),
-        }
+        let (body, code) = match text.rsplit_once('\n') {
+            Some((b, c)) => (b.to_string(), c.trim().parse::<u16>().unwrap_or(0)),
+            None => (text.into_owned(), 0),
+        };
+        Ok((code, body))
     }
 }
 
@@ -135,10 +136,26 @@ pub fn codegen(eng: &Engine, userinput: &str) -> String {
         brief
     );
     let cfg = LlmConfig::load(eng);
+    if cfg.api_key.trim().is_empty() {
+        return "error: 未设置 DEEPSEEK_API_KEY（环境变量名大小写敏感），无法调用 LLM".into();
+    }
     let user = format!(
         "请把下面的需求翻译成一段 kvlang 程序。严格按系统提示的格式输出，只输出 <name>/<kv> 两段，不要解释：\n\n{userinput}"
     );
-    let content = cfg.request(&sys, &user);
+    let (code, body) = match cfg.request(&sys, &user) {
+        Ok(x) => x,
+        Err(e) => return format!("error: {e}"),
+    };
+    if code != 200 {
+        return format!("error: LLM HTTP {code}: {}", body.trim());
+    }
+    let content = match serde_json::from_str::<Value>(&body) {
+        Ok(v) => match v["choices"][0]["message"]["content"].as_str() {
+            Some(s) => s.to_string(),
+            None => return format!("error: LLM 响应无内容: {}", body.trim()),
+        },
+        Err(_) => return format!("error: LLM 响应非 JSON: {}", body.trim()),
+    };
     println!("\n🧠 [codegen]\n{}", content.trim());
 
     let (raw_name, kv) = parse_program(&content);
