@@ -5,7 +5,9 @@
 //!   kvlayout: kvlanglayout.vet/layout/src      自造 kv 代码入库（layout C ABI）
 //! shell.run / python.run / byteseek.run 直接在 dispatch 里处理（无独立状态）。
 
+pub mod http;
 pub mod io;
+pub mod json;
 pub mod kvlayout;
 pub mod llm;
 
@@ -24,6 +26,9 @@ pub const REGS: &[(&str, i32, i32, &str)] = &[
     ("print", 1, 0, "any..."),
     ("println", 1, 0, "any..."),
     ("cerr", 1, 0, "any..."),
+    ("json.to", 1, 1, "any\nany"),
+    ("json.from", 1, 1, "any\nany"),
+    ("http.call", 4, 1, "[]char/utf32\n[]char/utf32\n[]char/utf32\n[]char/utf32\n[]char/utf32"),
     ("kvlanglayout.vet", 1, 1, "any\nany"),
     ("kvlanglayout.layout", 1, 1, "any\nany"),
     ("kvlanglayout.src", 1, 1, "any\nany"),
@@ -40,6 +45,9 @@ pub fn dispatch(eng: &Engine, op: &str, pc: &str) {
     match op {
         "print" | "println" | "cerr" => io::print_line(eng, pc),
         "input" => io::input(eng, pc),
+        "json.to" => json::to(eng, pc),
+        "json.from" => json::from(eng, pc),
+        "http.call" => http::call(eng, pc),
         "llm.call" => {
             let userinput = eng.read0(pc);
             let entry = llm::codegen(eng, &userinput);

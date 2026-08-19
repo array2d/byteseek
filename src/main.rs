@@ -19,7 +19,7 @@ include!(concat!(env!("OUT_DIR"), "/embedded_kv.rs"));
 fn layout_src(dsn: &str, src: &str) {
     let (mut entry, mut err) = ([0u8; 512], [0u8; 4096]);
     let rc = unsafe {
-        kvlangLayoutSrc(
+        kvlangLayoutCode(
             cs(src).as_ptr(),
             cs(dsn).as_ptr(),
             entry.as_mut_ptr() as *mut c_char,

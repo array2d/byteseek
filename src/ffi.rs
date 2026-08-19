@@ -19,6 +19,7 @@ pub struct KvspaceHead {
     pub dims: [i32; 8],
 }
 
+#[allow(dead_code)]
 unsafe extern "C" {
     // ── kvspace-durable：KV 存取 + TLV ────────────────────────────────
     pub fn kvspaceConnect(dsn: *const c_char) -> *mut c_void;
@@ -47,6 +48,29 @@ unsafe extern "C" {
         out_len: *mut u32,
     ) -> c_int;
     pub fn kvspaceDecodeHead(data: *const u8, data_len: u32, out: *mut KvspaceHead) -> c_int;
+    pub fn kvspaceList(
+        h: *mut c_void,
+        prefix: *const c_char,
+        expand_ext: c_int,
+        resolve: c_int,
+        out: *mut *mut u8,
+        out_len: *mut u32,
+    ) -> c_int;
+    pub fn kvspaceMkindex(
+        h: *mut c_void,
+        path: *const c_char,
+        err: *mut c_char,
+        err_cap: u32,
+    ) -> c_int;
+    pub fn kvspaceTlvEncode(
+        kind: *const c_char,
+        raw: *const u8,
+        raw_len: u32,
+        dims: *const i32,
+        ndim: i32,
+        out: *mut *mut u8,
+        out_len: *mut u32,
+    ) -> c_int;
 
     // ── kvlang runtime：模式2 执行 ───────────────────────────────────
     pub fn kvlangRuntimeConnect(dsn: *const c_char) -> *mut c_void;
@@ -99,11 +123,18 @@ unsafe extern "C" {
         err: *mut c_char,
         err_cap: u32,
     ) -> c_int;
-    pub fn kvlangLayoutSrc(
+    pub fn kvlangLayoutCode(
         src: *const c_char,
         dsn: *const c_char,
         entry: *mut c_char,
         entry_cap: u32,
+        err: *mut c_char,
+        err_cap: u32,
+    ) -> c_int;
+    pub fn kvlangLayoutFormat(
+        src: *const c_char,
+        out: *mut c_char,
+        out_cap: u32,
         err: *mut c_char,
         err_cap: u32,
     ) -> c_int;

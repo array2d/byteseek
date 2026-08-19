@@ -64,6 +64,59 @@ impl Engine {
         take(unsafe { kvlang_rwirextResolveWrite(self.kv, cs(pc).as_ptr(), 0) })
     }
 
+    // ── kvspace 结构操作（json/http/os 扩展遍历子树用）──────────────────
+    pub fn list_kv(&self, prefix: &str) -> Vec<String> {
+        unsafe {
+            let (mut out, mut olen) = (null_mut(), 0u32);
+            kvspaceList(self.kv, cs(prefix).as_ptr(), 0, 0, &mut out, &mut olen);
+            if out.is_null() || olen == 0 {
+                return Vec::new();
+            }
+            let s =
+                String::from_utf8_lossy(std::slice::from_raw_parts(out, olen as usize)).into_owned();
+            kvspaceBytesFree(out, olen);
+            s.split('\n').filter(|x| !x.is_empty()).map(str::to_string).collect()
+        }
+    }
+    pub fn mkindex(&self, path: &str) {
+        unsafe {
+            let mut err = [0u8; 256];
+            kvspaceMkindex(self.kv, cs(path).as_ptr(), err.as_mut_ptr() as *mut c_char, 256);
+        }
+    }
+    pub fn get_tlv(&self, key: &str) -> Vec<u8> {
+        unsafe {
+            let (mut out, mut olen) = (null_mut(), 0u32);
+            kvspaceGet(self.kv, cs(key).as_ptr(), &mut out, &mut olen);
+            if out.is_null() || olen == 0 {
+                return Vec::new();
+            }
+            let v = std::slice::from_raw_parts(out, olen as usize).to_vec();
+            kvspaceBytesFree(out, olen);
+            v
+        }
+    }
+    pub fn set_tlv(&self, key: &str, tlv: &[u8]) {
+        if tlv.is_empty() {
+            return;
+        }
+        unsafe {
+            let ck = cs(key);
+            let keys = [ck.as_ptr()];
+            let lens = [tlv.len() as u32];
+            let mut err = [0u8; 256];
+            kvspaceSet(
+                self.kv,
+                keys.as_ptr(),
+                tlv.as_ptr(),
+                lens.as_ptr(),
+                1,
+                err.as_mut_ptr() as *mut c_char,
+                256,
+            );
+        }
+    }
+
     // ── talk 队列：byteseek session 下的对话记录（input 落入此处，可寻址/持久）──
     pub fn talk_push(&self, role: &str, content: &str) {
         let n: u32 = self
