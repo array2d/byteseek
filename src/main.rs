@@ -14,7 +14,6 @@ mod rwir;
 
 use std::cell::Cell;
 use std::ffi::c_char;
-use std::process::Command;
 
 use engine::{Engine, DEFAULT_MODEL};
 use ffi::*;
@@ -63,17 +62,21 @@ fn main() {
         task
     };
 
-    // 1) 清空 kvspace（用 durable kvspace CLI，不用 redis-cli）
-    let _ = Command::new("kvspace")
-        .args(["--kvspace", &dsn, "clear"])
-        .status();
+    // 1) 连接 kvspace（byteseek 自持句柄，直连 durable ABI）并清空
+    let kv = unsafe { kvspaceConnect(cs(&dsn).as_ptr()) };
+    if kv.is_null() {
+        eprintln!("kvspaceConnect 失败: {dsn}");
+        std::process::exit(1);
+    }
+    let mut cerr = [0u8; 256];
+    unsafe { kvspaceClear(kv, cerr.as_mut_ptr() as *mut c_char, 256) };
 
     // 2) 布局 KV 文件进 redis（注册 rwfunc 到 /lib）。prompt.kv 先于 agentloop.kv。
     let layout = |file: &str| {
         let mut entry = [0u8; 512];
         let mut err = [0u8; 512];
         let rc = unsafe {
-            kvlang_layout_file(
+            kvlangLayoutFile(
                 cs(file).as_ptr(),
                 cs(&dsn).as_ptr(),
                 entry.as_mut_ptr() as *mut c_char,
@@ -92,15 +95,15 @@ fn main() {
     layout(&kvfile);
 
     // 3) 连接 runtime，注册 rwir
-    let rt = unsafe { kvlang_rt_connect(cs(&dsn).as_ptr()) };
+    let rt = unsafe { kvlangRuntimeConnect(cs(&dsn).as_ptr()) };
     if rt.is_null() {
-        eprintln!("kvlang_rt_connect 失败: {dsn}");
+        eprintln!("kvlangRuntimeConnect 失败: {dsn}");
         std::process::exit(1);
     }
-    let kv = unsafe { kvlang_rt_kv(rt) };
     let eng = Engine {
         rt,
-        conn: RwextConn { kv },
+        kv,
+        dsn: dsn.clone(),
         max_steps,
         subs: Cell::new(0),
     };
@@ -128,5 +131,8 @@ fn main() {
     println!("════════════════════════════════════════════════════════");
     println!("（用 `kvspace tree /session/{sid}` 可查看 agent 全部状态）");
 
-    unsafe { kvlang_rt_disconnect(rt) };
+    unsafe {
+        kvlangRuntimeDisconnect(rt);
+        kvspaceFree(kv);
+    };
 }

@@ -1,0 +1,22 @@
+# byteseek 自检：kvlanglayout.vet / .src / .layout 三入口（无网络、无 LLM）。
+# 验证 corebrain 自造 kv 代码 → 校验 → 入库 → 可寻址读回 全链路。
+# 用法：BYTESEEK_AGENT=agent/selftest_kvlayout.kv ./target/debug/byteseek
+
+good = "rwfunc twice(a:int64) -> b:int64 { add(a, a) -> b }"   # = 等价于 <-
+bad <- "rwfunc broken( -> {"
+
+# 1) vet 合法源码 => ok（只校验，不入库）
+kvlanglayout.vet(good) -> vok
+println("vet(good) => ", vok)
+
+# 2) vet 非法源码 => 错误信息（不打崩进程）
+kvlanglayout.vet(bad) -> badout
+println("vet(bad)  => ", badout)
+
+# 3) src 把内存源码 layout 进 kvspace => 入口名 twice
+kvlanglayout.src(good) -> entry
+println("src(good) => ", entry)
+
+# 4) 读回 /lib/twice.src —— 自造代码可寻址、可读回
+src_back <- /lib/twice.src
+println("readback  => ", src_back)

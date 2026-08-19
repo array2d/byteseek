@@ -4,9 +4,11 @@
 //!   python : python.run(sid)              跑 python3
 //!   agent  : agent.spawn(sid)             派生子 session + 子 vthread
 //!   io     : print / println / cerr       行输出（非 kvlang builtin，引擎自理）
+//!   kvlayout: kvlanglayout.vet/layout/src  corebrain 自造 kv 代码入库（layout C ABI）
 
 pub mod agent;
 pub mod io;
+pub mod kvlayout;
 pub mod llm;
 pub mod python;
 pub mod shell;
@@ -25,11 +27,14 @@ pub const REGS: &[(&str, i32, i32, &str)] = &[
     ("print", 1, 0, "any..."),
     ("println", 1, 0, "any..."),
     ("cerr", 1, 0, "any..."),
+    ("kvlanglayout.vet", 1, 1, "any\nany"),
+    ("kvlanglayout.layout", 1, 1, "any\nany"),
+    ("kvlanglayout.src", 1, 1, "any\nany"),
 ];
 
 pub fn register(eng: &Engine) {
     for (op, nr, nw, sig) in REGS {
-        unsafe { rwext_register(eng.conn_ptr(), cs(op).as_ptr(), *nr, *nw, cs(sig).as_ptr()) };
+        unsafe { kvlang_rwirextRegister(eng.kv, cs(op).as_ptr(), *nr, *nw, cs(sig).as_ptr()) };
     }
 }
 
@@ -45,6 +50,18 @@ pub fn dispatch(eng: &Engine, op: &str, pc: &str) {
         "shell.run" => shell::run(eng, &eng.read0(pc)),
         "python.run" => python::run(eng, &eng.read0(pc)),
         "agent.spawn" => agent::spawn(eng, &eng.read0(pc)),
+        "kvlanglayout.vet" => {
+            let out = kvlayout::vet(eng, &eng.read0(pc));
+            eng.set_kv(&eng.write0(pc), &out);
+        }
+        "kvlanglayout.layout" => {
+            let out = kvlayout::layout(eng, &eng.read0(pc));
+            eng.set_kv(&eng.write0(pc), &out);
+        }
+        "kvlanglayout.src" => {
+            let out = kvlayout::src(eng, &eng.read0(pc));
+            eng.set_kv(&eng.write0(pc), &out);
+        }
         other => eprintln!("[byteseek] 未知 rwir: {other} @ {pc}"),
     }
 }
