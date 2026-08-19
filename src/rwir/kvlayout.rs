@@ -32,7 +32,7 @@ pub fn vet(_eng: &Engine, src: &str) -> String {
 pub fn src(eng: &Engine, code: &str) -> String {
     let (mut entry, mut err) = (buf(), buf());
     let rc = unsafe {
-        kvlangLayoutSrc(
+        kvlangLayoutCode(
             cs(code).as_ptr(),
             cs(&eng.dsn).as_ptr(),
             entry.as_mut_ptr() as *mut c_char,
