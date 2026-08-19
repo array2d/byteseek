@@ -35,3 +35,26 @@ extbrain. Humans step back from "assisting with tool-building" to "setting
 goals"; the agent begins to improve its own reasoning core.
 
 **Stage 3 — AGI.**
+By the common industry definition, AGI is a system that matches or exceeds human
+capability across the full breadth of cognitive tasks — rather than a narrow one:
+it generalizes to novel tasks, acquires new skills on its own, and transfers
+knowledge across domains. byteseek pursues this endpoint through its own
+architecture, and each general-intelligence property maps to a concrete mechanism
+in the tree:
+
+- **Open-ended skill acquisition** — a new skill is a new piece of rwirext / kv
+  code written into the same tree, not a retrained monolith. Capability grows by
+  the tree growing.
+- **Self-improvement of the reasoning core** — via extbrain, the agent trains,
+  verifies, and replaces its own corebrain in-architecture; the improvement loop
+  runs on itself, with no fixed ceiling on corebrain / extbrain / rwirext.
+- **Cross-domain transfer** — all skills, memory, and history share one
+  addressable kvspace, so knowledge learned in one task is directly reachable and
+  reusable in another.
+- **Tractable oversight** — because the whole self-modification process stays
+  inside one addressable, persistent, self-modifiable KV tree (with PC as a
+  crash-recoverable KV path), capability growth remains observable, auditable,
+  and recoverable rather than an opaque black box. Humans supply only goals,
+  values, and constraints.
+
+This is the endpoint the closed loop is aimed at — an open goal, not a solved one.
