@@ -1,0 +1,1 @@
+尝试用 shell 执行一个必然失败的命令 nonexistent_cmd_xyz，不因失败中断，最终打印 recovered。
