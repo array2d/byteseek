@@ -1,12 +1,12 @@
 //! rwir —— 注册进 kvlang runtime 的一等公民。每个 rwir 一个子模块：
 //!   llm     : llm.call(userinput) -> entry   调 LLM 生成一段 kv 程序，layout 到
 //!             /lib/byteseek/session/<名>，返回入口名
-//!   io      : print / println / cerr / input  行输出 + 读 stdin（input 落入 talk 队列）
+//!   term    : print / println / cerr / input  行输出 + 读 stdin（input 落入 talk 队列）
 //!   kvlayout: kvlanglayout.vet/layout/src      自造 kv 代码入库（layout C ABI）
 //! shell.run / python.run / byteseek.run 直接在 dispatch 里处理（无独立状态）。
 
 pub mod http;
-pub mod io;
+pub mod term;
 pub mod json;
 pub mod kvlayout;
 pub mod llm;
@@ -43,8 +43,8 @@ pub fn register(eng: &Engine) {
 /// 主导驱动循环遇到 rwir 就分派。
 pub fn dispatch(eng: &Engine, op: &str, pc: &str) {
     match op {
-        "print" | "println" | "cerr" => io::print_line(eng, pc),
-        "input" => io::input(eng, pc),
+        "print" | "println" | "cerr" => term::print_line(eng, pc),
+        "input" => term::input(eng, pc),
         "json.to" => json::to(eng, pc),
         "json.from" => json::from(eng, pc),
         "http.call" => http::call(eng, pc),

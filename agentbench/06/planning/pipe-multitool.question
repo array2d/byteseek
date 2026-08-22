@@ -1,0 +1,1 @@
+先用 shell 打印字符串 abc，再用 python 把它反转，打印最终结果。要求经过 shell 与 python 两个工具。
