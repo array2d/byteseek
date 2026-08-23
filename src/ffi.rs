@@ -6,17 +6,51 @@
 
 use std::ffi::{c_char, c_int, c_void, CStr, CString};
 
-/// kvspaceDecodeHead 输出（与 kvspace-durable/src/ffi.rs::kvspaceHead_t 对齐）。
+/// kvspaceDecodeHead 输出（与 kvspace-durable/src/ffi.rs::kvspaceHead_t 对齐）。kindexpr 为唯一类型真相。
 #[repr(C)]
-#[derive(Default)]
 pub struct KvspaceHead {
-    pub kind: [u8; 32],
-    pub is_ptr: u8,
-    pub array_len: i32,
+    pub kindexpr: [u8; 256],
+    pub ro: u8,
+    pub vid: u32,
     pub body_len: i32,
     pub body_offset: i32,
-    pub ndim: i32,
-    pub dims: [i32; 8],
+}
+
+impl Default for KvspaceHead {
+    fn default() -> Self {
+        KvspaceHead {
+            kindexpr: [0u8; 256],
+            ro: 0,
+            vid: 0,
+            body_len: 0,
+            body_offset: 0,
+        }
+    }
+}
+
+/// 解析 kindexpr 内容 → (ref, dims, base kind)。
+pub fn parse_kindexpr(kx: &str) -> (i32, Vec<i32>, String) {
+    let (r, rest) = match kx.as_bytes().first() {
+        Some(b'*') => (1, &kx[1..]),
+        Some(b'@') => (2, &kx[1..]),
+        _ => (0, kx),
+    };
+    if rest.starts_with('[') {
+        match rest.find(']') {
+            Some(end) => (
+                r,
+                rest[1..end]
+                    .split(',')
+                    .filter(|d| !d.is_empty())
+                    .map(|d| d.parse().unwrap_or(0))
+                    .collect(),
+                rest[end + 1..].to_string(),
+            ),
+            None => (r, Vec::new(), rest.to_string()),
+        }
+    } else {
+        (r, Vec::new(), rest.to_string())
+    }
 }
 
 #[allow(dead_code)]

@@ -87,9 +87,10 @@ fn parse_tlv(data: &[u8]) -> (String, Vec<u8>, usize) {
     {
         return (String::new(), Vec::new(), 1);
     }
-    let kind = String::from_utf8_lossy(&h.kind)
+    let kx = String::from_utf8_lossy(&h.kindexpr)
         .trim_end_matches('\0')
         .to_string();
+    let (_, dims, kind) = parse_kindexpr(&kx);
     let (bo, bl) = (h.body_offset as usize, h.body_len.max(0) as usize);
     let raw = if bo + bl <= data.len() {
         data[bo..bo + bl].to_vec()
@@ -97,8 +98,8 @@ fn parse_tlv(data: &[u8]) -> (String, Vec<u8>, usize) {
         Vec::new()
     };
     let mut arr_len = 1usize;
-    for i in 0..h.ndim.max(0) as usize {
-        arr_len *= h.dims[i].max(1) as usize;
+    for d in &dims {
+        arr_len *= (*d).max(1) as usize;
     }
     (kind, raw, arr_len)
 }
