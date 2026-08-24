@@ -8,7 +8,7 @@ use std::path::PathBuf;
 fn main() {
     let manifest = env!("CARGO_MANIFEST_DIR");
 
-    let libso = format!("{manifest}/libso");
+    let libso = format!("{manifest}/libso/lib");
     println!("cargo:rustc-link-search=native={libso}");
     println!("cargo:rustc-link-lib=dylib=kvspace_durable");
     println!("cargo:rustc-link-lib=dylib=kvlang_runtime");
