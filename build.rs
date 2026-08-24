@@ -8,14 +8,9 @@ use std::path::PathBuf;
 fn main() {
     let manifest = env!("CARGO_MANIFEST_DIR");
 
-    let libso = format!("{manifest}/libso/lib");
-    println!("cargo:rustc-link-search=native={libso}");
     println!("cargo:rustc-link-lib=dylib=kvspace_durable");
     println!("cargo:rustc-link-lib=dylib=kvlang_runtime");
     println!("cargo:rustc-link-lib=dylib=kvlang_layout");
-    println!("cargo:rustc-link-arg=-Wl,-rpath,{libso}");
-    println!("cargo:rustc-link-arg=-Wl,--disable-new-dtags");
-    println!("cargo:rerun-if-changed=libso");
 
     let kvdir = format!("{manifest}/lib/byteseek");
     let mut files: Vec<PathBuf> = std::fs::read_dir(&kvdir)
