@@ -57,7 +57,7 @@ pub fn parse_kindexpr(kx: &str) -> (i32, Vec<i32>, String) {
 unsafe extern "C" {
     // ── kvspace-durable：KV 存取 + TLV ────────────────────────────────
     pub fn kvspaceConnect(dsn: *const c_char) -> *mut c_void;
-    pub fn kvspaceFree(h: *mut c_void);
+    pub fn kvspaceClose(h: *mut c_void);
     pub fn kvspaceClear(h: *mut c_void, err: *mut c_char, err_cap: u32) -> c_int;
     pub fn kvspaceBytesFree(p: *mut u8, len: u32);
     pub fn kvspaceSet(

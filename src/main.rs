@@ -84,6 +84,6 @@ fn main() {
 
     unsafe {
         kvlangRuntimeDisconnect(rt);
-        kvspaceFree(kv);
+        kvspaceClose(kv);
     };
 }
