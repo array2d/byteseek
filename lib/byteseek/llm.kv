@@ -10,6 +10,8 @@ lib llm {
 			return
 		}
 		kv·get("/byteseek/llm.api") -> url
+		kv·get("/byteseek/llm.print") -> print
+		if (print != "0") { println("[llm] 需求:", userinput) }
 		kv·get("/byteseek/prompt/system") -> sys
 		kv·get("/lib/byteseek.kvlangbrief") -> brief
 		sys + "\n\n=== kvlang 语法速览 ===\n" + brief -> sys
@@ -21,6 +23,11 @@ lib llm {
 		"{\"model\":\"deepseek-v4-flash\",\"messages\":[{\"role\":\"system\",\"content\":" + sys_j + "},{\"role\":\"user\",\"content\":" + user_j + "}],\"temperature\":0.2,\"top_p\":1.0,\"max_tokens\":4096,\"stream\":false}" -> body
 		"Content-Type: application/json\nAuthorization: Bearer " + key -> header
 		http·call("POST", header, url, body) -> resp
+		string·find(resp, "choices") -> has_choices
+		if (has_choices < 0) {
+			"error: LLM 响应异常: " + resp -> entry
+			return
+		}
 		json·from(resp) -> /tmp/llmresp
 		kv·get("/tmp/llmresp·choices·[0]·message·content") -> content
 		if (content == "") {
@@ -43,6 +50,11 @@ lib llm {
 		} else {
 			content -> kv
 		}
+		if (print != "0") {
+			println("[llm] 任务名:", name)
+			println("[llm] 生成代码:")
+			println(kv)
+		}
 		"lib byteseek {\nlib session {\nlib " + name + " {\n" + kv + "\nbyteseek/session/" + name + "·main()\n}\n}\n}\n" -> wrapped
 		kvlanglayout·vet(wrapped) -> v
 		if (v != "ok") {
@@ -56,5 +68,6 @@ lib llm {
 			return
 		}
 		"byteseek/session/" + name + "·init" -> entry
+		if (print != "0") { println("[llm] 入口:", entry) }
 	}
 }

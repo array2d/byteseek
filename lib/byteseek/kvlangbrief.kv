@@ -91,5 +91,14 @@ string·find(s,"ll") -> i      # 2（找不到返回 -1）
 # 替换第 i 个字符：用 slice 拼接，不要用 string·char(s,i)=x
 string·slice(s,0,1) + "a" -> t; string·slice(s,2,5) -> u; t + u -> r   # "hallo"
 ```
+
+**`+` 不混类型（定宽类型无隐式转换）**：`+` 只在两边同 kind 时成立——字符串+字符串=拼接、数字+数字=相加。
+`"标签" + 数字` 会 TypeError（`expected numeric, got char/utf32`）。
+打印带标签的数字，用 `println` 多参数（自动空格分隔），**不要**拼字符串：
+```kv
+n = 42
+println("answer =", n)        # answer = 42（✅ 两个参数）
+# "answer = " + n -> s; println(s)   # ❌ TypeError：char + int
+```
 """ -> /lib/byteseek.kvlangbrief
 }
