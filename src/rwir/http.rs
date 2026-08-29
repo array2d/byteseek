@@ -4,7 +4,7 @@
 
 use std::time::Duration;
 
-use crate::engine::{Engine, TOOL_CAP};
+use crate::engine::Engine;
 use crate::ffi::*;
 
 pub fn call(eng: &Engine, pc: &str) {
@@ -62,10 +62,6 @@ fn request(method: &str, header: &str, url: &str, body: &str) -> String {
         }
         Err(ureq::Error::Transport(t)) => format!("http 失败: {t}"),
     };
-    if s.len() > TOOL_CAP {
-        s.truncate(TOOL_CAP);
-        s.push_str("\n…(已截断)");
-    }
     s
 }
 
