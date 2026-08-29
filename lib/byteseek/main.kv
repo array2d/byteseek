@@ -1,24 +1,24 @@
 # byteseek 主脑。main 播种提示词后进入 mainbrain 循环：
-#   input 等待用户输入 → llm.call 生成一段 kv 程序（layout 到 /lib/byteseek/session/<名>）
-#   → byteseek.run 执行它。输入 exit 退出。
+#   input 等待用户输入 → llm·call 生成一段 kv 程序（layout 到 /lib/byteseek/session/<名>）
+#   → byteseek·run 执行它。输入 exit 退出。
 # main 无 scope（只是两个调用），可被直接 bootstrap；mainbrain 的 while/if 在嵌套帧里寻址。
 
 lib byteseek {
 	rwfunc main() -> () {
-		seed_prompts()
-		mainbrain()
+		byteseek·seed_prompts()
+		byteseek·mainbrain()
 	}
 
 	rwfunc mainbrain() -> () {
 		running = 1                            # = 等价于 <-
 		while (running == 1) {
 			input("byteseek> ") -> userinput
-			string.cmp(userinput, "exit") -> q
+			string·cmp(userinput, "exit") -> q
 			if (q == 0) {
 				running <- 0
 			} else {
-				llm.call(userinput) -> entry
-				byteseek.run(entry)
+				llm·call(userinput) -> entry
+				byteseek·run(entry)
 			}
 		}
 		println("bye.")

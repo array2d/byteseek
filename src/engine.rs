@@ -1,7 +1,6 @@
 //! Engine —— byteseek 主脑运行时核心：kvspace(redis) 读写、talk 队列、主导驱动 vthread。
 //! 具体 rwir（llm/shell/python/io/kvlayout）分组在 `crate::rwir`。
 
-use std::cell::Cell;
 use std::ffi::{c_char, c_void};
 use std::ptr::null_mut;
 
@@ -9,21 +8,30 @@ use crate::ffi::*;
 use crate::rwir;
 
 pub const TOOL_CAP: usize = 4000; // shell/python 工具输出截断
-pub const DEFAULT_MODEL: &str = "deepseek-v4-flash";
 
 pub struct Engine {
     pub rt: *mut c_void, // kvlang runtime 句柄
     pub kv: *mut c_void, // kvspace 句柄（byteseek 自持，同时传给 rwirext）
     pub dsn: String,     // kvspace DSN（layout rwir 需要）
-    pub subs: Cell<u32>, // 生成会话计数器，保证 session 名唯一
 }
 
 impl Engine {
     // ── kvspace 读写（绝对路径，char/utf8 TLV 编解码）───────────────────
     pub fn set_kv(&self, key: &str, val: &str) {
         unsafe {
+            let utf32: Vec<u32> = val.chars().map(|c| c as u32).collect();
+            let raw: Vec<u8> = utf32.iter().flat_map(|v| v.to_le_bytes()).collect();
+            let dims = [utf32.len() as i32];
             let (mut buf, mut len) = (null_mut(), 0u32);
-            kvspaceNewCharByte(val.as_ptr(), val.len() as u32, &mut buf, &mut len);
+            kvspaceTlvEncode(
+                cs("char/utf32").as_ptr(),
+                raw.as_ptr(),
+                raw.len() as u32,
+                dims.as_ptr(),
+                1,
+                &mut buf,
+                &mut len,
+            );
             let ck = cs(key);
             let keys = [ck.as_ptr()];
             let lens = [len];
@@ -49,9 +57,22 @@ impl Engine {
             }
             let mut head = KvspaceHead::default();
             kvspaceDecodeHead(out, olen, &mut head);
+            let kx = String::from_utf8_lossy(&head.kindexpr)
+                .trim_end_matches('\0')
+                .to_string();
+            let (_, _, kind) = parse_kindexpr(&kx);
             let (bo, bl) = (head.body_offset as usize, head.body_len.max(0) as usize);
-            let s =
-                String::from_utf8_lossy(std::slice::from_raw_parts(out.add(bo), bl)).into_owned();
+            let s = if kind == "char/utf32" {
+                std::slice::from_raw_parts(out.add(bo), bl)
+                    .chunks_exact(4)
+                    .map(|c| {
+                        char::from_u32(u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                            .unwrap_or('\u{FFFD}')
+                    })
+                    .collect()
+            } else {
+                String::from_utf8_lossy(std::slice::from_raw_parts(out.add(bo), bl)).into_owned()
+            };
             kvspaceBytesFree(out, olen);
             s
         }
@@ -78,10 +99,10 @@ impl Engine {
             s.split('\n').filter(|x| !x.is_empty()).map(str::to_string).collect()
         }
     }
-    pub fn mkindex(&self, path: &str) {
+    pub fn del_tree(&self, prefix: &str) {
         unsafe {
             let mut err = [0u8; 256];
-            kvspaceMkindex(self.kv, cs(path).as_ptr(), err.as_mut_ptr() as *mut c_char, 256);
+            kvspaceDelTree(self.kv, cs(prefix).as_ptr(), err.as_mut_ptr() as *mut c_char, 256);
         }
     }
     pub fn get_tlv(&self, key: &str) -> Vec<u8> {

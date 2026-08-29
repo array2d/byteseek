@@ -1,8 +1,8 @@
 //! byteseek —— KV 原生 agent substrate。
 //!
 //! agent 的"自己"（代码/状态/记忆/执行）整个放进一棵可寻址、可持久、可自改的 kvspace(redis) 树。
-//! 本进程启动即：连 kvspace → layout 全部内嵌 lib/byteseek/*.kv → 跑 byteseek.init 种语法速览
-//! → bootstrap byteseek.main 进入 REPL（input 等 stdin、llm.call 生成 kv、byteseek.run 执行）。
+//! 本进程启动即：连 kvspace → layout 全部内嵌 lib/byteseek/*.kv → 跑 byteseek·init 种语法速览
+//! → bootstrap byteseek·main 进入 REPL（input 等 stdin、llm·call 生成 kv、byteseek·run 执行）。
 
 mod engine;
 mod ffi;
@@ -57,7 +57,6 @@ fn main() {
         rt,
         kv,
         dsn: dsn.clone(),
-        subs: std::cell::Cell::new(0),
     };
     eng.register();
     rwir::llm::seed(&eng);
@@ -68,8 +67,8 @@ fn main() {
         println!("[byteseek] layout {name}");
     }
 
-    // 4) 跑 byteseek.init，把语法速览种进 /lib/byteseek.kvlangbrief
-    eng.run_fn("byteseek.init");
+    // 4) 跑 byteseek·init，把语法速览种进 /lib/byteseek.kvlangbrief
+    eng.run_fn("byteseek·init");
     let brief = eng.get_kv("/lib/byteseek.kvlangbrief");
     println!(
         "[byteseek] kvlangbrief 已种入 /lib/byteseek.kvlangbrief（{} 字符）",
@@ -79,8 +78,8 @@ fn main() {
         eprintln!("[byteseek] 警告：/lib/byteseek.kvlangbrief 为空");
     }
 
-    // 5) bootstrap byteseek.main 进入 REPL
-    eng.run_fn("byteseek.main");
+    // 5) bootstrap byteseek·main 进入 REPL
+    eng.run_fn("byteseek·main");
 
     unsafe {
         kvlangRuntimeDisconnect(rt);

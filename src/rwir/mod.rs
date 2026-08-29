@@ -1,9 +1,9 @@
 //! rwir —— 注册进 kvlang runtime 的一等公民。每个 rwir 一个子模块：
-//!   llm     : llm.call(userinput) -> entry   调 LLM 生成一段 kv 程序，layout 到
+//!   llm     : llm·call(userinput) -> entry   调 LLM 生成一段 kv 程序，layout 到
 //!             /lib/byteseek/session/<名>，返回入口名
 //!   term    : print / println / cerr / input  行输出 + 读 stdin（input 落入 talk 队列）
-//!   kvlayout: kvlanglayout.vet/layout/src      自造 kv 代码入库（layout C ABI）
-//! shell.run / python.run / byteseek.run 直接在 dispatch 里处理（无独立状态）。
+//!   kvlayout: kvlanglayout·vet/layout/src      自造 kv 代码入库（layout C ABI）
+//! shell·run / python·run / byteseek·run 直接在 dispatch 里处理（无独立状态）。
 
 pub mod http;
 pub mod term;
@@ -18,20 +18,19 @@ use crate::ffi::*;
 
 /// rwir 注册表：(opcode, 读参数, 写参数, 签名)。
 pub const REGS: &[(&str, i32, i32, &str)] = &[
-    ("llm.call", 1, 1, "any\nany"),
-    ("byteseek.run", 1, 0, "any"),
-    ("shell.run", 1, 1, "any\nany"),
-    ("python.run", 1, 1, "any\nany"),
+    ("byteseek·run", 1, 0, "any"),
+    ("shell·run", 1, 1, "any\nany"),
+    ("python·run", 1, 1, "any\nany"),
     ("input", 1, 1, "any\nany"),
     ("print", 1, 0, "any..."),
     ("println", 1, 0, "any..."),
     ("cerr", 1, 0, "any..."),
-    ("json.to", 1, 1, "any\nany"),
-    ("json.from", 1, 1, "any\nany"),
-    ("http.call", 4, 1, "[]char/utf32\n[]char/utf32\n[]char/utf32\n[]char/utf32\n[]char/utf32"),
-    ("kvlanglayout.vet", 1, 1, "any\nany"),
-    ("kvlanglayout.layout", 1, 1, "any\nany"),
-    ("kvlanglayout.src", 1, 1, "any\nany"),
+    ("json·to", 1, 1, "any\nany"),
+    ("json·from", 1, 1, "any\nany"),
+    ("http·call", 4, 1, "[]char/utf32\n[]char/utf32\n[]char/utf32\n[]char/utf32\n[]char/utf32"),
+    ("kvlanglayout·vet", 1, 1, "any\nany"),
+    ("kvlanglayout·layout", 1, 1, "any\nany"),
+    ("kvlanglayout·src", 1, 1, "any\nany"),
 ];
 
 pub fn register(eng: &Engine) {
@@ -45,32 +44,27 @@ pub fn dispatch(eng: &Engine, op: &str, pc: &str) {
     match op {
         "print" | "println" | "cerr" => term::print_line(eng, pc),
         "input" => term::input(eng, pc),
-        "json.to" => json::to(eng, pc),
-        "json.from" => json::from(eng, pc),
-        "http.call" => http::call(eng, pc),
-        "llm.call" => {
-            let userinput = eng.read0(pc);
-            let entry = llm::codegen(eng, &userinput);
-            eng.set_kv(&eng.write0(pc), &entry);
-        }
-        "byteseek.run" => byteseek_run(eng, &eng.read0(pc)),
-        "shell.run" => {
+        "json·to" => json::to(eng, pc),
+        "json·from" => json::from(eng, pc),
+        "http·call" => http::call(eng, pc),
+        "byteseek·run" => byteseek_run(eng, &eng.read0(pc)),
+        "shell·run" => {
             let out = tool_run("shell", "bash", "-c", &eng.read0(pc));
             eng.set_kv(&eng.write0(pc), &out);
         }
-        "python.run" => {
+        "python·run" => {
             let out = tool_run("python", "python3", "-c", &eng.read0(pc));
             eng.set_kv(&eng.write0(pc), &out);
         }
-        "kvlanglayout.vet" => {
+        "kvlanglayout·vet" => {
             let out = kvlayout::vet(eng, &eng.read0(pc));
             eng.set_kv(&eng.write0(pc), &out);
         }
-        "kvlanglayout.layout" => {
+        "kvlanglayout·layout" => {
             let out = kvlayout::layout(eng, &eng.read0(pc));
             eng.set_kv(&eng.write0(pc), &out);
         }
-        "kvlanglayout.src" => {
+        "kvlanglayout·src" => {
             let out = kvlayout::src(eng, &eng.read0(pc));
             eng.set_kv(&eng.write0(pc), &out);
         }
@@ -78,7 +72,7 @@ pub fn dispatch(eng: &Engine, op: &str, pc: &str) {
     }
 }
 
-/// byteseek.run(entry)：把生成的 kv 程序作为嵌套 vthread 跑到结束（可重入 run_fn）。
+/// byteseek·run(entry)：把生成的 kv 程序作为嵌套 vthread 跑到结束（可重入 run_fn）。
 fn byteseek_run(eng: &Engine, entry: &str) {
     if entry.is_empty() || entry.starts_with("error") {
         eprintln!("[byteseek] 跳过执行（生成失败）：{entry}");
@@ -87,7 +81,7 @@ fn byteseek_run(eng: &Engine, entry: &str) {
     eng.run_fn(entry);
 }
 
-/// shell.run / python.run 共用：跑一段代码，stdout(+stderr) 截断后作为字符串返回。
+/// shell·run / python·run 共用：跑一段代码，stdout(+stderr) 截断后作为字符串返回。
 fn tool_run(label: &str, prog: &str, flag: &str, code: &str) -> String {
     println!("\n🔧 {label}:\n{code}");
     let out = Command::new(prog).arg(flag).arg(code).output();

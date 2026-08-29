@@ -1,13 +1,23 @@
-//! rwir `json.to` / `json.from`：KV 子树 ↔ JSON 文本（go/json 的 Rust 内嵌，语义照搬）。
-//!   json.to(root)   -> str   root 整棵子树读成 JSON：目录→嵌套对象；compact 数组与
-//!                            散 key 数组 name[0..N-1] 统一序列化为 JSON 数组。
-//!   json.from(json) -> root  反序列化 JSON 写回 root 子树。
+//! rwir `json.to` / `json.from`：KV 子树 ↔ JSON 文本（对齐 kvlang go/json 的 · 成员形态）。
+//!   json.to(root)   -> str   root 整棵子树读成 JSON：object 容器（p + memindex p·）→
+//!                            嵌套对象；stringkeymap（散 key 数组 name·[i]）→ JSON 数组；
+//!                            / 目录树（kind=index）→ 嵌套对象；compact ndarray → 数组。
+//!   json.from(json) -> root  反序列化 JSON 写回 root 子树（覆盖语义，先 del_tree）。
+//! 容器值在 p（无后缀）：object body 空、stringkeymap dims=[n]；memindex p·（kind=index，
+//! body=[4B count LE][names]）是成员列表唯一权威。对象数组（choices/messages）递归支持。
 //! 编码走权威 kvspace ABI：DecodeHead 读头、TlvEncode/NewCharByte 编码。
 
 use serde_json::{Map, Value};
 
 use crate::engine::Engine;
 use crate::ffi::*;
+
+// 常量与 kvlang go/json 的 cconst 对齐（byteseek 直连 durable，无 kvspaceConst ABI）。
+const SEP: &str = "·";
+const DIR_SUF: &str = "/";
+const KIND_OBJ: &str = "object";
+const KIND_MAP: &str = "stringkeymap";
+const KIND_INDEX: &str = "index";
 
 pub fn to(eng: &Engine, pc: &str) {
     let names = params(eng, pc);
@@ -16,7 +26,7 @@ pub fn to(eng: &Engine, pc: &str) {
     } else {
         eng.read0(pc)
     };
-    let out = build_value(eng, &root).to_string();
+    let out = read_value(eng, &root).to_string();
     eng.set_kv(&eng.write0(pc), &out);
 }
 
@@ -29,9 +39,8 @@ pub fn from(eng: &Engine, pc: &str) {
         eng.write0(pc)
     };
     if let Ok(v) = serde_json::from_str::<Value>(&src) {
-        if let Value::Object(_) = v {
-            write_map(eng, &root, &v);
-        }
+        eng.del_tree(&root);
+        write_value(eng, &root, &v);
     }
 }
 
@@ -42,42 +51,58 @@ fn params(eng: &Engine, pc: &str) -> Vec<String> {
 
 // ── KV 子树 → JSON ────────────────────────────────────────────────
 
-fn build_value(eng: &Engine, root: &str) -> Value {
-    let mut map = Map::new();
-    let mut scat: std::collections::BTreeMap<String, Vec<usize>> = Default::default();
-    for child in eng.list_kv(&format!("{root}/")) {
-        if child.ends_with('/') {
-            let name = child.trim_end_matches('/').to_string();
-            map.insert(name.clone(), build_value(eng, &format!("{root}/{name}")));
-        } else if let Some((base, idx)) = split_array_name(&child) {
-            scat.entry(base).or_default().push(idx);
-        } else {
-            let (kind, raw, arr_len) = parse_tlv(&eng.get_tlv(&format!("{root}/{child}")));
-            map.insert(child, tlv_to_json(&kind, &raw, arr_len));
-        }
+fn read_value(eng: &Engine, path: &str) -> Value {
+    let (kind, raw, arr_len) = parse_tlv(&eng.get_tlv(path));
+    if kind == KIND_OBJ {
+        return read_obj(eng, path);
     }
-    for (base, mut idxs) in scat {
-        idxs.sort_unstable();
-        let arr = idxs
-            .iter()
-            .map(|i| {
-                let (kind, raw, arr_len) =
-                    parse_tlv(&eng.get_tlv(&format!("{root}/{base}[{i}]")));
-                tlv_to_json(&kind, &raw, arr_len)
-            })
-            .collect();
-        map.insert(base, Value::Array(arr));
+    if kind == KIND_MAP {
+        return read_arr(eng, path);
+    }
+    let dkind = parse_tlv(&eng.get_tlv(&format!("{path}{DIR_SUF}"))).0;
+    if dkind == KIND_INDEX {
+        return read_dir(eng, path);
+    }
+    if kind.is_empty() {
+        return Value::Null; // None → JSON null
+    }
+    tlv_to_json(&kind, &raw, arr_len)
+}
+
+// read_dir：/ 目录树（kind=index）→ JSON object，子名带尾 / 先 strip。
+fn read_dir(eng: &Engine, path: &str) -> Value {
+    let mut map = Map::new();
+    for name in eng.list_kv(&format!("{path}{DIR_SUF}")) {
+        let key = name.trim_end_matches('/').to_string();
+        map.insert(key.clone(), read_value(eng, &format!("{path}{DIR_SUF}{key}")));
     }
     Value::Object(map)
 }
 
-fn split_array_name(name: &str) -> Option<(String, usize)> {
-    let lt = name.rfind('[')?;
-    if lt == 0 || !name.ends_with(']') {
-        return None;
+// read_obj：object 容器值 p → 遍历 memindex p· 成员。
+fn read_obj(eng: &Engine, path: &str) -> Value {
+    let mut map = Map::new();
+    for name in eng.list_kv(&format!("{path}{SEP}")) {
+        map.insert(name.clone(), read_value(eng, &format!("{path}{SEP}{name}")));
     }
-    let idx = name[lt + 1..name.len() - 1].parse().ok()?;
-    Some((name[..lt].to_string(), idx))
+    Value::Object(map)
+}
+
+// read_arr：stringkeymap 容器值 p → 遍历 memindex p· 坐标段 [i]，按数值升序。
+fn read_arr(eng: &Engine, path: &str) -> Value {
+    let mut idxs: Vec<usize> = Vec::new();
+    for n in eng.list_kv(&format!("{path}{SEP}")) {
+        let s = n.trim_start_matches('[').trim_end_matches(']');
+        if let Ok(i) = s.parse::<usize>() {
+            idxs.push(i);
+        }
+    }
+    idxs.sort_unstable();
+    Value::Array(
+        idxs.iter()
+            .map(|i| read_value(eng, &format!("{path}{SEP}[{i}]")))
+            .collect(),
+    )
 }
 
 fn parse_tlv(data: &[u8]) -> (String, Vec<u8>, usize) {
@@ -178,19 +203,32 @@ fn utf32_to_string(raw: &[u8]) -> String {
 
 // ── JSON → KV 子树 ────────────────────────────────────────────────
 
-fn write_map(eng: &Engine, root: &str, v: &Value) {
-    if let Value::Object(map) = v {
-        for (k, val) in map {
-            let child = format!("{root}/{k}");
-            match val {
-                Value::Object(_) => {
-                    eng.mkindex(&format!("{child}/"));
-                    write_map(eng, &child, val);
-                }
-                Value::Array(arr) => eng.set_tlv(&child, &array_to_tlv(arr)),
-                _ => eng.set_tlv(&child, &value_to_tlv(val)),
-            }
-        }
+fn write_value(eng: &Engine, path: &str, v: &Value) {
+    match v {
+        Value::Object(m) => write_obj(eng, path, m),
+        Value::Array(arr) => write_arr(eng, path, arr),
+        Value::Null => eng.set_tlv(path, &[]),
+        _ => eng.set_tlv(path, &value_to_tlv(v)),
+    }
+}
+
+fn write_obj(eng: &Engine, path: &str, m: &Map<String, Value>) {
+    let mut keys: Vec<&String> = m.keys().collect();
+    keys.sort();
+    eng.set_tlv(path, &mk_obj_value());
+    let names: Vec<String> = keys.iter().map(|k| k.to_string()).collect();
+    eng.set_tlv(&format!("{path}{SEP}"), &mk_mem_index(&names));
+    for k in keys {
+        write_value(eng, &format!("{path}{SEP}{k}"), &m[k]);
+    }
+}
+
+fn write_arr(eng: &Engine, path: &str, arr: &[Value]) {
+    let names: Vec<String> = (0..arr.len()).map(|i| format!("[{i}]")).collect();
+    eng.set_tlv(path, &mk_map_value(arr.len()));
+    eng.set_tlv(&format!("{path}{SEP}"), &mk_mem_index(&names));
+    for (i, v) in arr.iter().enumerate() {
+        write_value(eng, &format!("{path}{SEP}[{i}]"), v);
     }
 }
 
@@ -209,48 +247,42 @@ fn value_to_tlv(v: &Value) -> Vec<u8> {
     }
 }
 
-fn array_to_tlv(arr: &[Value]) -> Vec<u8> {
-    match arr.first() {
-        Some(Value::Number(_)) => {
-            if arr.iter().all(|e| e.as_i64().is_some()) {
-                let mut raw = Vec::with_capacity(arr.len() * 8);
-                for e in arr {
-                    raw.extend_from_slice(&e.as_i64().unwrap().to_le_bytes());
-                }
-                tlv_encode("int64", &raw, arr.len())
-            } else {
-                let mut raw = Vec::with_capacity(arr.len() * 8);
-                for e in arr {
-                    raw.extend_from_slice(&e.as_f64().unwrap_or(0.0).to_le_bytes());
-                }
-                tlv_encode("float64", &raw, arr.len())
-            }
-        }
-        Some(Value::Bool(_)) => {
-            let raw: Vec<u8> = arr.iter().map(|e| e.as_bool().unwrap_or(false) as u8).collect();
-            tlv_encode("bool", &raw, arr.len())
-        }
-        _ => Vec::new(),
-    }
+// ── 容器值 / memindex 编码 ─────────────────────────────────────────
+
+// memindex p·：kind=index，body=[4B count LE][names]。
+fn mk_mem_index(names: &[String]) -> Vec<u8> {
+    let mut body = (names.len() as u32).to_le_bytes().to_vec();
+    body.extend_from_slice(names.join("\n").as_bytes());
+    tlv_encode(KIND_INDEX, &body, 1)
+}
+
+// object 容器值 p：body 空。
+fn mk_obj_value() -> Vec<u8> {
+    tlv_encode(KIND_OBJ, &[], 1)
+}
+
+// stringkeymap 容器值 p：body 空，dims=[n]（恒一维坐标段）。
+fn mk_map_value(n: usize) -> Vec<u8> {
+    tlv_encode_dims(KIND_MAP, &[], &[n as i32])
 }
 
 // ── TLV 编码（权威 kvspace ABI）───────────────────────────────────
 
 fn tlv_encode(kind: &str, raw: &[u8], arr_len: usize) -> Vec<u8> {
+    let dims = [arr_len as i32];
+    let ds: &[i32] = if arr_len > 1 { &dims } else { &[] };
+    tlv_encode_dims(kind, raw, ds)
+}
+
+fn tlv_encode_dims(kind: &str, raw: &[u8], dims: &[i32]) -> Vec<u8> {
     unsafe {
         let (mut out, mut olen) = (std::ptr::null_mut(), 0u32);
-        let dims = [arr_len as i32];
-        let (dptr, ndim) = if arr_len > 1 {
-            (dims.as_ptr(), 1i32)
-        } else {
-            (std::ptr::null(), 0i32)
-        };
         kvspaceTlvEncode(
             cs(kind).as_ptr(),
             raw.as_ptr(),
             raw.len() as u32,
-            dptr,
-            ndim,
+            if dims.is_empty() { std::ptr::null() } else { dims.as_ptr() },
+            dims.len() as i32,
             &mut out,
             &mut olen,
         );
@@ -264,16 +296,12 @@ fn tlv_encode(kind: &str, raw: &[u8], arr_len: usize) -> Vec<u8> {
 }
 
 fn new_char_byte(bytes: &[u8]) -> Vec<u8> {
-    unsafe {
-        let (mut out, mut olen) = (std::ptr::null_mut(), 0u32);
-        kvspaceNewCharByte(bytes.as_ptr(), bytes.len() as u32, &mut out, &mut olen);
-        if out.is_null() || olen == 0 {
-            return Vec::new();
-        }
-        let v = std::slice::from_raw_parts(out, olen as usize).to_vec();
-        kvspaceBytesFree(out, olen);
-        v
-    }
+    let utf32: Vec<u32> = String::from_utf8_lossy(bytes)
+        .chars()
+        .map(|c| c as u32)
+        .collect();
+    let raw: Vec<u8> = utf32.iter().flat_map(|v| v.to_le_bytes()).collect();
+    tlv_encode_dims("char/utf32", &raw, &[utf32.len() as i32])
 }
 
 #[cfg(test)]
@@ -290,7 +318,7 @@ mod tests {
     }
 
     fn test_engine() -> Engine {
-        let dsn = "fs:///tmp/byteseek-json-test";
+        let dsn = "redis://127.0.0.1:6379";
         let kv = unsafe { kvspaceConnect(cs(dsn).as_ptr()) };
         assert!(!kv.is_null());
         let mut err = [0u8; 256];
@@ -299,38 +327,42 @@ mod tests {
             rt: std::ptr::null_mut(),
             kv,
             dsn: dsn.to_string(),
-            subs: std::cell::Cell::new(0),
         }
     }
 
     #[test]
     fn roundtrip() {
         let eng = test_engine();
-        eng.set_tlv("/data/age", &i64_tlv(&[42]));
-        eng.set_tlv("/data/name", &new_char_byte(b"alice"));
-        eng.set_tlv("/data/score", &tlv_encode("float64", &3.14f64.to_le_bytes(), 1));
-        eng.set_tlv("/data/active", &tlv_encode("bool", &[1], 1));
-        eng.set_tlv("/data/grp/c", &i64_tlv(&[1]));
-        eng.set_tlv("/data/grp/d", &i64_tlv(&[2]));
-        eng.set_tlv("/data/cont", &i64_tlv(&[10, 20, 30]));
-        eng.set_tlv("/data/scat[0]", &i64_tlv(&[10]));
-        eng.set_tlv("/data/scat[1]", &i64_tlv(&[20]));
-        eng.set_tlv("/data/scat[2]", &i64_tlv(&[30]));
+        let v: Value = serde_json::from_str(
+            r#"{"active":true,"age":42,"grp":{"c":1,"d":2},"name":"alice",
+                "items":[{"id":1,"label":"one"},{"id":2,"label":"two"}],
+                "scat":[10,20,30],"score":3.14}"#,
+        )
+        .unwrap();
+        write_value(&eng, "/data", &v);
 
-        let j = build_value(&eng, "/data").to_string();
+        let j = read_value(&eng, "/data").to_string();
         assert_eq!(
             j,
-            r#"{"active":true,"age":42,"cont":[10,20,30],"grp":{"c":1,"d":2},"name":"alice","scat":[10,20,30],"score":3.14}"#
+            r#"{"active":true,"age":42,"grp":{"c":1,"d":2},"items":[{"id":1,"label":"one"},{"id":2,"label":"two"}],"name":"alice","scat":[10,20,30],"score":3.14}"#
         );
+    }
 
-        let v: Value = serde_json::from_str(&j).unwrap();
-        write_map(&eng, "/data2", &v);
-        let (kind, raw, _) = parse_tlv(&eng.get_tlv("/data2/age"));
-        assert_eq!(kind, "int64");
-        assert_eq!(read_int(&raw), 42);
-        assert_eq!(eng.get_kv("/data2/name"), "alice");
-        let (_, raw, _) = parse_tlv(&eng.get_tlv("/data2/cont"));
-        assert_eq!(read_int(&raw[0..8]), 10);
-        assert_eq!(read_int(&raw[16..24]), 30);
+    #[test]
+    fn native_data_to() {
+        let eng = test_engine();
+        // 用户 kv 代码写 · 成员（object 容器 + memindex），json.to 读回。
+        eng.set_tlv("/data", &mk_obj_value());
+        eng.set_tlv("/data·", &mk_mem_index(&["age".into(), "name".into(), "scat".into()]));
+        eng.set_tlv("/data·age", &i64_tlv(&[42]));
+        eng.set_tlv("/data·name", &new_char_byte(b"alice"));
+        eng.set_tlv("/data·scat", &mk_map_value(3));
+        eng.set_tlv("/data·scat·", &mk_mem_index(&["[0]".into(), "[1]".into(), "[2]".into()]));
+        eng.set_tlv("/data·scat·[0]", &i64_tlv(&[10]));
+        eng.set_tlv("/data·scat·[1]", &i64_tlv(&[20]));
+        eng.set_tlv("/data·scat·[2]", &i64_tlv(&[30]));
+
+        let j = read_value(&eng, "/data").to_string();
+        assert_eq!(j, r#"{"age":42,"name":"alice","scat":[10,20,30]}"#);
     }
 }
