@@ -1,0 +1,60 @@
+# lib llm —— 代码脑（kvlang 自举，替代 Rust llm.rs 的 codegen）。
+# llm·call(userinput) -> entry：调 LLM 生成 kv 程序，wrap 进 lib byteseek/session/<name>，
+# vet + layout 入库，返回入口名 byteseek/session/<name>·init。
+
+lib llm {
+	rwfunc call(userinput:[]char/utf32) -> (entry:[]char/utf32) {
+		kv·get("/byteseek/llm.key") -> key
+		if (key == "") {
+			"error: 未设置 DEEPSEEK_API_KEY" -> entry
+			return
+		}
+		kv·get("/byteseek/llm.api") -> url
+		kv·get("/byteseek/prompt/system") -> sys
+		kv·get("/lib/byteseek.kvlangbrief") -> brief
+		sys + "\n\n=== kvlang 语法速览 ===\n" + brief -> sys
+		"请把下面的需求翻译成一段 kvlang 程序。严格按系统提示的格式输出，只输出 <name>/<kv> 两段，不要解释：\n\n" + userinput -> user
+		sys -> /tmp/esc·sys
+		json·to(/tmp/esc·sys) -> sys_j
+		user -> /tmp/esc·user
+		json·to(/tmp/esc·user) -> user_j
+		"{\"model\":\"deepseek-v4-flash\",\"messages\":[{\"role\":\"system\",\"content\":" + sys_j + "},{\"role\":\"user\",\"content\":" + user_j + "}],\"temperature\":0.2,\"top_p\":1.0,\"max_tokens\":4096,\"stream\":false}" -> body
+		"Content-Type: application/json\nAuthorization: Bearer " + key -> header
+		http·call("POST", header, url, body) -> resp
+		json·from(resp) -> /tmp/llmresp
+		kv·get("/tmp/llmresp·choices·[0]·message·content") -> content
+		if (content == "") {
+			"error: LLM 响应无内容: " + resp -> entry
+			return
+		}
+		string·find(content, "<name>") -> n1
+		string·find(content, "</name>") -> n3
+		if (n1 >= 0) {
+			if (n3 < 0) { string·len(content) -> n3 }
+			string·slice(content, n1 + 6, n3) -> name
+		} else {
+			"s" -> name
+		}
+		string·find(content, "<kv>") -> k1
+		string·find(content, "</kv>") -> k3
+		if (k1 >= 0) {
+			if (k3 < 0) { string·len(content) -> k3 }
+			string·slice(content, k1 + 4, k3) -> kv
+		} else {
+			content -> kv
+		}
+		"lib byteseek {\nlib session {\nlib " + name + " {\n" + kv + "\nbyteseek/session/" + name + "·main()\n}\n}\n}\n" -> wrapped
+		kvlanglayout·vet(wrapped) -> v
+		if (v != "ok") {
+			"error: vet 失败: " + v -> entry
+			return
+		}
+		kvlanglayout·src(wrapped) -> e2
+		string·find(e2, "error") -> has_err
+		if (has_err >= 0) {
+			e2 -> entry
+			return
+		}
+		"byteseek/session/" + name + "·init" -> entry
+	}
+}

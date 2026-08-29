@@ -85,12 +85,11 @@ mod tests {
             rt: std::ptr::null_mut(),
             kv,
             dsn: dsn.to_string(),
-            subs: std::cell::Cell::new(0),
         };
         let src = r#"
 lib http {
     rwfunc get(url:[]char/utf32) -> (resp:[]char/utf32) {
-        http.call("GET", "", url, "") -> resp
+        http·call("GET", "", url, "") -> resp
     }
 }
 "#;

@@ -4,14 +4,42 @@
 //! TTY 走 rustyline（方向键移动光标 / 上下翻历史 / 按字符退格）；管道走 read_line（脚本/测试）。
 
 use std::cell::RefCell;
-use std::ffi::c_int;
 use std::io::Write;
 
 use crate::engine::Engine;
 use crate::ffi::*;
 
 pub fn print_line(eng: &Engine, pc: &str) {
-    println!("{}", eng.read0(pc));
+    let params = take(unsafe { kvlang_rwirextParams(eng.kv, cs(pc).as_ptr()) });
+    let mut it = params.split('\n');
+    let opcode = it.next().unwrap_or("");
+    let (sep, rawnl, cerr) = match opcode {
+        "print" => ("", 1, 0),
+        "println" => (" ", 0, 0),
+        "cerr" => (" ", 0, 1),
+        _ => return,
+    };
+    let mut line = String::new();
+    for (i, _) in it.enumerate() {
+        if i > 0 {
+            line.push_str(sep);
+        }
+        let d = take(unsafe { kvlang_rwirextResolveRead(eng.kv, cs(pc).as_ptr(), i as i32) });
+        line.push_str(&d);
+    }
+    if cerr != 0 {
+        eprint!("{line}");
+        if rawnl == 0 {
+            eprintln!();
+        }
+        std::io::stderr().flush().ok();
+    } else {
+        print!("{line}");
+        if rawnl == 0 {
+            println!();
+        }
+        std::io::stdout().flush().ok();
+    }
 }
 
 thread_local! {

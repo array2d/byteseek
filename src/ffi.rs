@@ -59,6 +59,12 @@ unsafe extern "C" {
     pub fn kvspaceConnect(dsn: *const c_char) -> *mut c_void;
     pub fn kvspaceClose(h: *mut c_void);
     pub fn kvspaceClear(h: *mut c_void, err: *mut c_char, err_cap: u32) -> c_int;
+    pub fn kvspaceDelTree(
+        h: *mut c_void,
+        prefix: *const c_char,
+        err: *mut c_char,
+        err_cap: u32,
+    ) -> c_int;
     pub fn kvspaceBytesFree(p: *mut u8, len: u32);
     pub fn kvspaceSet(
         h: *mut c_void,
@@ -75,7 +81,7 @@ unsafe extern "C" {
         out: *mut *mut u8,
         out_len: *mut u32,
     ) -> c_int;
-    pub fn kvspaceNewCharByte(
+    pub fn kvspaceNewChar(
         bytes: *const u8,
         len: u32,
         out: *mut *mut u8,
