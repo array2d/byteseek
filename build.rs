@@ -1,7 +1,7 @@
 // 链接 byteseek/libso 下的 durable(redis) 版三方 .so：
 //   kvspace_durable —— byteseek 自持 kvspace 句柄（KV 存取 + TLV）
 //   kvlang_runtime  —— 模式2 执行 + rwirext 宿主
-//   kvlang_layout   —— .kv 编译入库
+//   kvlanglayout    —— .kv 编译入库
 // 并把 lib/**/*.kv 全部 include_str! 进二进制（EMBEDDED_KV），启动时 layout 进 kvspace。
 // 递归收集：lib/ 顶层标准库（http.kv 等）与 lib/byteseek/ 自举代码同等对待，勿遗漏。
 use std::path::{Path, PathBuf};
@@ -23,7 +23,7 @@ fn main() {
 
     println!("cargo:rustc-link-lib=dylib=kvspace_durable");
     println!("cargo:rustc-link-lib=dylib=kvlang_runtime");
-    println!("cargo:rustc-link-lib=dylib=kvlang_layout");
+    println!("cargo:rustc-link-lib=dylib=kvlanglayout");
 
     let libdir = format!("{manifest}/lib");
     let mut files: Vec<PathBuf> = Vec::new();
