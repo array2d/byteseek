@@ -6,10 +6,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: 检出 kvlang（runtime-rs 源依赖，path ../kvlang/runtime-rs）
-        uses: actions/checkout@v4
-        with:
-          repository: array2d/kvlang
-          path: ../kvlang
+        run: |
+          git clone --depth 1 https://github.com/array2d/kvlang.git ../kvlang
       - name: 下载 ABI 依赖
         env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
         run: ./ci/deps.sh
