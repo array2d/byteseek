@@ -1,39 +1,21 @@
 //! byteseek —— KV 原生 agent substrate。
 //!
 //! agent 的"自己"（代码/状态/记忆/执行）整个放进一棵可寻址、可持久、可自改的 kvspace(redis) 树。
-//! 本进程启动即：连 kvspace → layout 全部内嵌 lib/byteseek/*.kv → 跑 byteseek·init 种语法速览
-//! → bootstrap byteseek·main 进入 REPL（input 等 stdin、llm·call 生成 kv、byteseek·run 执行）。
+//! 本进程启动即：连 kvspace → 注册 rwir（kvlang_rs 纯净集 + byteseek 自有）→ layout runtime-rs
+//! 内嵌 stdlib 与自举 lib/byteseek/*.kv → 跑 byteseek·init 种语法速览 → 驱动 byteseek·main 进入
+//! REPL（input 等 stdin、llm·call 生成 kv、byteseek·run 执行）。
+//!
+//! Engine / ffi / 纯净 rwir(term/json/http/kvlanglayout) 全部复用 kvlang runtime-rs（kvlang_rs crate），
+//! byteseek 仅叠加 agent 专属 rwir 与驱动循环（见 crate::rwir）。
+#![allow(non_snake_case)]
 
-mod engine;
-mod ffi;
 mod rwir;
 
+use kvlang_rs::engine::Engine;
+use kvlang_rs::ffi::*;
 use std::ffi::c_char;
 
-use engine::Engine;
-use ffi::*;
-
-include!(concat!(env!("OUT_DIR"), "/embedded_kv.rs"));
-
-/// 把一段 .kv 源码 layout 进 kvspace（内存源码，内嵌的 lib/byteseek/*.kv）。
-fn layout_src(dsn: &str, src: &str) {
-    let (mut entry, mut err) = ([0u8; 512], [0u8; 4096]);
-    let rc = unsafe {
-        kvlangLayoutCode(
-            cs(src).as_ptr(),
-            cs(dsn).as_ptr(),
-            entry.as_mut_ptr() as *mut c_char,
-            entry.len() as u32,
-            err.as_mut_ptr() as *mut c_char,
-            err.len() as u32,
-        )
-    };
-    if rc != 0 {
-        let e = cbuf(&err);
-        eprintln!("layout 失败: {}", e.trim());
-        std::process::exit(1);
-    }
-}
+include!(concat!(env!("OUT_DIR"), "/embedded_kv.rs")); // byteseek 自举代码 lib/byteseek/*.kv
 
 fn main() {
     let dsn = std::env::var("KVSPACE").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
@@ -47,7 +29,7 @@ fn main() {
     let mut cerr = [0u8; 256];
     unsafe { kvspaceClear(kv, cerr.as_mut_ptr() as *mut c_char, 256) };
 
-    // 2) 连接 runtime，注册 rwir
+    // 2) 连接 runtime
     let rt = unsafe { kvlangRuntimeConnect(cs(&dsn).as_ptr()) };
     if rt.is_null() {
         eprintln!("kvlangRuntimeConnect 失败: {dsn}");
@@ -58,17 +40,19 @@ fn main() {
         kv,
         dsn: dsn.clone(),
     };
-    eng.register();
-    rwir::llm::seed(&eng);
 
-    // 3) layout 全部内嵌 lib/byteseek/*.kv（注册 rwfunc/init 到 /lib）
+    // 3) 注册 rwir（纯净集 + byteseek 自有）
+    rwir::register(&eng);
+
+    // 4) layout+run runtime-rs 内嵌 stdlib（http/kv/string/… 常量落值），再 layout byteseek 自举代码
+    eng.layout_stdlib();
+    eng.run_stdlib_init();
     for (name, src) in EMBEDDED_KV {
-        layout_src(&dsn, src);
-        println!("[byteseek] layout {name}");
+        rwir::layout_src(&eng, name, src);
     }
 
-    // 4) 跑 byteseek·init，把语法速览种进 /lib/byteseek.kvlangbrief
-    eng.run_fn("byteseek·init");
+    // 5) 跑 byteseek·init，把语法速览种进 /lib/byteseek.kvlangbrief
+    rwir::run_fn(&eng, "byteseek·init");
     let brief = eng.get_kv("/lib/byteseek.kvlangbrief");
     println!(
         "[byteseek] kvlangbrief 已种入 /lib/byteseek.kvlangbrief（{} 字符）",
@@ -78,8 +62,8 @@ fn main() {
         eprintln!("[byteseek] 警告：/lib/byteseek.kvlangbrief 为空");
     }
 
-    // 5) bootstrap byteseek·main 进入 REPL
-    eng.run_fn("byteseek·main");
+    // 6) 驱动 byteseek·main 进入 REPL
+    rwir::run_fn(&eng, "byteseek·main");
 
     unsafe {
         kvlangRuntimeDisconnect(rt);
