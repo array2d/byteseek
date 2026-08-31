@@ -5,8 +5,20 @@
 
 lib byteseek {
 	rwfunc main() -> () {
+		byteseek·seedllm()
 		byteseek·seed_prompts()
 		byteseek·mainbrain()
+	}
+
+	rwfunc seedllm() -> () {
+		env·get("DEEPSEEK_API_URL") -> api
+		if (api == "") { "https://api.deepseek.com/chat/completions" -> api }
+		env·get("DEEPSEEK_API_KEY") -> key
+		env·get("BYTESEEK_LLM_PRINT") -> print
+		if (print == "") { "1" -> print }
+		kv·set("/byteseek/llm.api", api)
+		kv·set("/byteseek/llm.key", key)
+		kv·set("/byteseek/llm.print", print)
 	}
 
 	rwfunc mainbrain() -> () {

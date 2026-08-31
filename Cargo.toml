@@ -9,7 +9,6 @@ name = "byteseek"
 path = "src/main.rs"
 
 [dependencies]
-libc = "0.2"
-rustyline = "15"
-serde_json = "1"
-ureq = { version = "2", features = ["gzip"] }
+# 复用 kvlang runtime-rs：Engine / ffi / 纯净 rwir(term/json/http/kvlanglayout) + 内嵌 stdlib。
+# byteseek 只叠加 agent 专属 rwir（byteseek·run/shell·run/python·run）与驱动循环。
+kvlang-rs = { path = "../kvlang/runtime-rs" }
