@@ -61,7 +61,7 @@ lib llm {
 			"error: vet 失败: " + v -> entry
 			return
 		}
-		kvlanglayout·src(wrapped) -> e2
+		kvlanglayout·layout(wrapped) -> e2
 		string·find(e2, "error") -> has_err
 		if (has_err >= 0) {
 			e2 -> entry

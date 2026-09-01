@@ -22,7 +22,6 @@ pub const REGS: &[(&str, i32, i32, &str)] = &[
     ("byteseek·run", 1, 0, "any"),
     ("shell·run", 1, 1, "any\nany"),
     ("python·run", 1, 1, "any\nany"),
-    ("env·get", 1, 1, "any\nany"),
 ];
 
 /// 先注册 kvlang_rs 纯净集（term/json/http/kvlanglayout），再叠加 byteseek 自有 rwir。
@@ -95,10 +94,6 @@ pub fn dispatch(eng: &Engine, op: &str, pc: &str) {
         "python·run" => {
             let out = tool_run("python", "python3", "-c", &eng.read0(pc));
             eng.set_kv(&eng.write0(pc), &out);
-        }
-        "env·get" => {
-            let v = std::env::var(eng.read0(pc)).unwrap_or_default();
-            eng.set_kv(&eng.write0(pc), &v);
         }
         "input" => {
             std_rwir::dispatch(eng, "input", pc);
