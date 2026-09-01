@@ -72,6 +72,10 @@ a·[0] -> v0                # 坐标段成员读
 "/n1" -> p; p·val -> v     # ✅ 引号=路径串（指针）·member 解引用；不加引号 /n1 读的是值非路径
 ```
 
+## 扩展世界：`@` 前缀 kindexpr
+`@` 开头的 kindexpr 标记「元信息 key」——其真实 xvalue **不属于 kvspace 元存储**（kvspace 世界），而在 kvspace 的扩展世界。
+文件系统里的文件、GPU 里的 tensordata 都**不直接存进 kvspace**，kvspace 只存一条元信息（如大小、设备、外部路径），实体读写走扩展存储。
+
 ## 控制流（只能在 rwfunc 体内）
 `while (c) {…}`、`if (c) {…} else {…}`。条件可为复合表达式。数组遍历用 `while` 配 `ndarray·numel`/`xv·at`（见上），不要用 for-in。
 
