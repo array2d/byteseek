@@ -1,18 +1,19 @@
 name: ci
 on: [push, pull_request, repository_dispatch]
 jobs:
-  build:
+  selftest:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: 检出 kvlang（runtime-rs 源依赖，path ../kvlang/runtime-rs）
-        run: |
-          git clone --depth 1 https://github.com/array2d/kvlang.git ../kvlang
-      - name: 下载 ABI 依赖
+      - name: 检出 kvlang（提供 kvlang / kvlanglayout 工具链源）
+        run: git clone --depth 1 https://github.com/array2d/kvlang.git ../kvlang
+      - name: 下载 ABI 依赖（kvspace / kvspace-durable .so → /usr/lib）
         env: { GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
         run: ./ci/deps.sh
-      - name: 构建 kvlang runtime（bin/libkvlang_runtime.so，供 kvlang_rs build.rs 链接）
+      - name: 构建并安装 kvlang 工具链（kvlang / kvlanglayout + .so → /usr）
         working-directory: ../kvlang
-        run: make runtime
-      - name: 构建
-        run: sudo -E make
+        run: |
+          make runtime runtime-rs layout
+          sudo -E make install
+      - name: byteseek 自检（无网络、无 LLM，shm 后端）
+        run: KVSPACE=shm:///tmp/byteseek_ci make test

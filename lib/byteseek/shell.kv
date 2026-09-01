@@ -1,0 +1,13 @@
+# shell·run(cmd) -> out：跑一段 bash，返回 stdout（@ 句柄，读时兑现）。
+# 绑定 out/err 写槽 → internet/proc·exec 管道捕获两流；就地打印工具头与两流后返回 stdout。
+
+lib shell {
+	rwfunc run(cmd:[]char/utf32) -> (out:[]char/utf32) {
+		println("🔧 shell:", cmd)
+		noenv = map()
+		a = {"bash", "-c", cmd}
+		internet/proc·exec(a, noenv) -> code, o, e
+		println("↳", o, e)
+		o -> out
+	}
+}
