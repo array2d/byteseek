@@ -1,5 +1,6 @@
 {
   "kvlang": "v0.2.4",
   "kvspace": "v0.2.4",
-  "kvspace-durable": "v0.2.4"
+  "kvspace-durable": "v0.2.4",
+  "kvspace-c": "v0.2.4"
 }
