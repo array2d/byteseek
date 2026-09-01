@@ -1,124 +1,126 @@
 # byteseek —— KV 原生 agent substrate
 
-> 日期：2026-08-19
-> 实现：`src/`（corebrain 引擎，Rust）+ `lib/byteseek/*.kv`（执行逻辑与提示词）
+> 实现：`lib/byteseek/*.kv` + `lib/local/config.kv`（执行逻辑、提示词、配置，全部 kvlang）。
+> 无自有 Rust：byteseek 不是可执行文件，而是活在 kvspace 里的一棵 `.kv` 代码树，由标准
+> `kvlang` 工具链（runtime-rs 编译出的 `kvlang` 二进制）驱动。
+
+## 定位
+
+agent 的「自己」——代码、状态、记忆、执行进度——全部活在**同一棵可寻址、可持久、可自改的
+KV 树**（kvspace，后端 redis/fs/shm/s3）里。LLM、shell、python、json、http 通过 rwir 成为
+这棵树里的一等公民。byteseek 自身不叠加任何宿主语言：它复用 kvlang 标准 rwir，主脑逻辑全是
+`lib/` 下的 kv rwfunc。
 
 ## 源码结构
 
 ```
-src/main.rs        入口：连 kvspace → 清空 → 连 runtime → 注册 rwir → 种 LLM 配置
-                   → layout 全部内嵌 lib/byteseek/*.kv → 跑 byteseek.init → 进 REPL
-src/ffi.rs         C ABI：kvspace-durable（自持句柄）+ kvlang runtime（模式2 主导执行）
-                   + rwirext 宿主 ABI + kvlang layout（vet/layout/format）
-src/engine.rs      Engine：kvspace 读写、talk 队列、主导驱动 vthread（run_fn 可重入）
-src/rwir/          一等公民 rwir，一模块一职责：
-  ├─ io.rs         print / println / cerr / input（term 输入输出）
-  ├─ llm.rs        llm.call(userinput) -> entry：代码脑，LLM 生成 kv 程序
-  ├─ json.rs       json.to / json.from：KV 子树 ↔ JSON（rust 内嵌，照搬 go/json）
-  ├─ http.rs       http.call(method,header,url,body) -> resp（rust 原生 ureq）
-  ├─ kvlayout.rs   kvlanglayout.vet / .layout / .src（layout C ABI）
-  └─ mod.rs        注册表 REGS + dispatch 派发 + shell/python 共用 tool_run
+lib/byteseek/main.kv         main / mainbrain（REPL 循环）/ run（动态执行生成程序）
+lib/byteseek/llm.kv          llm·call(userinput) -> entry：代码脑，LLM 生成 kv 程序并入库
+lib/byteseek/prompt.kv       系统提示（lib prompt 顶层写 → byteseek/prompt·init，layout 期种入）
+lib/byteseek/kvlangbrief.kv  kvlang 语法速览（顶层写 → byteseek·init，layout 期种入）
+lib/byteseek/shell.kv        shell·run(cmd) -> out：bash 子进程，捕获 stdout
+lib/byteseek/python.kv       python·run(code) -> out：python3 子进程，捕获 stdout
+lib/local/config.kv          LLM 配置（lib local 顶层写 → local·init，layout 期种入；gitignored）
 ```
 
-## 定位
+## 引导与运行
 
-byteseek 不是又一个 agent 框架。agent 的「自己」——代码、状态、记忆、执行进度——全部
-活在**同一棵可寻址、可持久、可自改的 KV 树**（kvspace，后端 redis/fs/s3）里。LLM、
-shell、python、json、http 通过注册 rwir 成为这棵树里的一等公民。
+byteseek 无「拉起进程」一说。两步：
 
-一个进程 = 一个 **corebrain**：把 `.kv` 布局进 kvspace → 注册 rwir → bootstrap 一条
-vthread → 主导驱动执行（kvlang 模式 2），遇 rwir 就地处理。扩展库（json/http/…）是
-**单进程内嵌**的 Rust rwir + `lib/` 下 kv 源码的 rwfunc，不再起独立进程。
+```bash
+KVLANG_LIB=lib kvlang        # 引导：layout lib/ 全部 .kv 进 kvspace，并执行各 init
+kvlang byteseek·main         # 运行：驱动已入库的 funckey（进入 REPL）
+```
+
+`KVLANG_LIB=lib kvlang`（无 entry）复用标准 kvlang 的「layout 全部 lib + 跑各 init」机制：
+`config.kv`/`kvlangbrief.kv`/`prompt.kv` 的顶层写语句被 parser 合成为 `local·init` /
+`byteseek·init` / `byteseek/prompt·init`，在 layout 期执行一次，把配置、语法速览、系统提示
+种进 kvspace（跑完即删 init 子树）。rwfunc（`main`/`mainbrain`/`run`/`llm·call`/`shell·run`/
+`python·run`）留在 `/lib` 下持久。之后 `kvlang byteseek·main` 直接驱动 funckey，不再 layout、
+不再重跑 init。`byteseek·main` 是 funckey 路径（去 `/lib` 前缀），不是文件路径。
 
 ## 状态树布局
 
 ```
-/byteseek/llm.api            LLM 接口地址（seed 从 DEEPSEEK_API_URL 读入，有默认）
-/byteseek/llm.key            LLM 鉴权 key（DEEPSEEK_API_KEY，可空）
-/byteseek/prompt/system      系统提示（prompt.kv 的 seed_prompts() 播种）
-/lib/byteseek.kvlangbrief    kvlang 语法速览（llm.call 拼进 system prompt）
-/byteseek/session/talk/*     对话队列（input 落入，可寻址/持久）
+/byteseek/llm.api            LLM 接口地址（config.kv 种入）
+/byteseek/llm.key            LLM 鉴权 key（config.kv 种入，可空）
+/byteseek/llm.print          是否打印 LLM 交互（config.kv 种入）
+/byteseek/prompt/system      系统提示（prompt.kv 种入）
+/lib/byteseek.kvlangbrief    kvlang 语法速览（kvlangbrief.kv 种入；llm·call 拼进 system prompt）
+/lib/byteseek/session/<name> llm·call 生成并入库的一次性程序（可寻址/持久）
 /vthread/{vid}/‥pc           执行到哪一步（KV 路径字符串，崩溃可恢复）
-/lib/<pkg>.<name>/...        编译后函数（签名 + 指令 + 源码 .src）
+/lib/<pkg>·<name>/...        编译后函数（签名 + 指令 + 源码 .src）
 ```
-
-一个 session 的全部状态可直接观测：`kvspace tree /byteseek/session/`。
 
 ## 提示词与 LLM 参数也是 KV 数据
 
-系统提示不硬编码在 Rust 里，而是 `lib/byteseek/prompt.kv` 的 `seed_prompts()` 把提示词
-写进 `/byteseek/prompt/system`；语法速览由 `kvlangbrief.kv` 落进 `/lib/byteseek.kvlangbrief`。
-`llm.call` 每轮把两者拼成 system prompt。LLM 接口地址与 key 由 `llm::seed` 从环境读入
-`/byteseek/llm.api` / `/byteseek/llm.key`。换模型/网关/提示词只需改树，无需重编译。
+系统提示不硬编码，而是 `prompt.kv` 的 `lib prompt` 顶层写把提示词落进 `/byteseek/prompt/system`；
+语法速览由 `kvlangbrief.kv` 落进 `/lib/byteseek.kvlangbrief`。`llm·call` 每轮把两者拼成
+system prompt。接口地址与 key 由 `config.kv` 种入。换模型/网关/提示词只需改树，无需重编译——
+本就无可编译之物。
 
-## 代码脑：llm.call 生成 kv 代码（自造代码）
+## 代码脑：llm·call 生成 kv 代码（自造代码）
 
-corebrain 的主循环不再是「LLM 决定动作类型 → 分派固定工具」，而是 **LLM 直接生成一段
-kvlang 程序并执行**：
+主循环不是「LLM 决定动作类型 → 分派固定工具」，而是 **LLM 直接生成一段 kvlang 程序并执行**：
 
-```
-rwfunc main() -> () { seed_prompts(); mainbrain() }
+```kv
+rwfunc main() -> () { byteseek·mainbrain() }
 rwfunc mainbrain() -> () {
     running = 1
     while (running == 1) {
         input("byteseek> ") -> userinput
-        string.cmp(userinput, "exit") -> q
+        string·cmp(userinput, "exit") -> q
         if (q == 0) { running <- 0 }
-        else { llm.call(userinput) -> entry; byteseek.run(entry) }
+        else { llm·call(userinput) -> entry; byteseek·run(entry) }
     }
     println("bye.")
 }
 ```
 
-`llm.call(userinput)`：system prompt（提示词 + 语法速览）→ LLM → 解析 `<name>`/`<kv>` →
-包进 `lib byteseek { lib session { lib NAME {…} } }` → `kvlanglayout.vet` 校验 → 通过后
-`kvlanglayout.src` layout 入库 → 返回入口 `byteseek/session/NAME.init`。生成失败回填
-`error: …`，`byteseek.run` 跳过执行。
+`llm·call(userinput)`：system prompt（提示词 + 语法速览）→ LLM → 解析 `<name>`/`<kv>` →
+包进 `lib byteseek { lib session { lib NAME { … NAME·main() } } }` → `kvlanglayout·vet` 校验 →
+通过后 `kvlanglayout·layout` 入库 → 返回入口 `byteseek/session/NAME·init`。生成失败回填
+`error: …`，`byteseek·run` 据前缀跳过执行。
 
-## rwir（一等公民）
+## byteseek·run：同 vthread 动态执行（进程↔vid 1:1）
 
-在 `rwir::register`（`src/rwir/mod.rs` 的 `REGS` 表）里注册到 `/lib/<opcode>`：
-
-| opcode | 处理 |
-|--------|------|
-| `print / println / cerr / input` | term 输入输出（io.rs） |
-| `llm.call(userinput) -> entry` | 代码脑：LLM 生成 kv 程序入库 |
-| `byteseek.run(entry)` | 把生成的 kv 程序作为嵌套 vthread 跑完 |
-| `shell.run(cmd) -> out` / `python.run(code) -> out` | 子进程工具（mod.rs tool_run，截断 TOOL_CAP） |
-| `json.to(root) -> str` / `json.from(str) -> root` | KV 子树 ↔ JSON |
-| `http.call(method,header,url,body) -> resp` | 网络抓取（rust 原生 ureq） |
-| `kvlanglayout.vet / .layout / .src` | .kv 校验/入库（layout C ABI） |
-
-`lib/byteseek/http.kv` 是 rwfunc 标准库示例：`lib http { rwfunc get/post/put/del }` 封装
-`http.call`（kv 源码，可寻址/可自改）。
-
-## 模式 2 主导驱动
-
-`Engine::run_fn(funcname)`：`kvlangRuntimeBootstrap` 拿 vid → 循环
-`kvlangRuntimeExecuteVthread`：rc==0 结束；rc==1 遇 ext rwir，就地 `dispatch`（op 由
-`kvlang_rwirextParams` 首行解码），再 `kvlang_rwirextNextPc` 写回 `/vthread/{vid}/‥pc`。
-可重入：`byteseek.run` 在 dispatch 里嵌套调用 `run_fn`。
-
-## 实现要点（踩坑记录）
-
-**带 scope 的函数必须在被调用的嵌套帧里执行。** layout 禁止顶层 `while`，会把顶层语句
-包进 `init` 帧。若直接 bootstrap 带 scope 的函数作为顶层 vthread 帧，其 while 的 scope PC
-无法经该帧的 extindex 解析，会静默失败。正确做法：`main()` 无 scope，由它调用带 while
-的 `mainbrain()`，让 scope PC 在嵌套调用帧里正确寻址。见 `run_fn`。
-
-## 运行
-
-```bash
-cargo build --release
-KVSPACE=redis://127.0.0.1:6379 DEEPSEEK_API_KEY=... ./target/release/byteseek
+```kv
+rwfunc run(entry:[]char/utf32) -> () {
+    if (entry == "") { return }
+    string·find(entry, "error") -> iserr
+    if (iserr == 0) { println("[byteseek] 跳过执行（生成失败）:", entry); return }
+    vthread·call(entry)
+}
 ```
 
-环境变量：`KVSPACE`（默认 `redis://127.0.0.1:6379`）、`DEEPSEEK_API_URL`（默认 deepseek）、
-`DEEPSEEK_API_KEY`。
+`vthread·call(funckey)` 是 kvlang 的 native builtin（`runtime/src/builtin.c`）：在**当前 vthread**
+（同 vid）按运行时 funckey 造一次动态 `OP_CALL`，跑到被调函数结束再回到本指令的 NextPc。与
+`vthread·run` 不同——不新开 vid、不 WATCH 挂起——被调程序里的 rwir（`println`/`shell·run`/…）
+由当前驱动就地派发。故一次 REPL 请求、生成程序的执行、其内工具调用全在同一进程同一 vid 内完成，
+契合「一个进程 ⟺ 一条 vthread」。
 
-## 已验证
+## rwir：全部复用 kvlang 标准集
 
-- json.to/from 子树 ↔ JSON 往返（fs 后端单测，输出与 tutorial/10 一致）
-- http lib 源码 vet（`[]char/utf32` 参数类型）
-- 多级嵌套 lib layout + 增量合并（layout 单测，`lib a { lib b {…} }`）
-- layout 三 ABI：vet / format（保 lib 分组、幂等）/ layoutcode（按函数覆盖）
+byteseek 不再注册任何自有 Rust rwir。所需能力全部是 kvlang 标准 rwir（runtime-rs / runtime-c）：
+
+| opcode | 来源 |
+|--------|------|
+| `print` / `println` / `cerr` / `input` | 标准 term rwir |
+| `json·to` / `json·from` | 标准 json rwir |
+| `http·call(method,header,url,body) -> resp` | 标准 http rwir |
+| `kvlanglayout·vet / ·format / ·layout / ·dump` | 标准 layout rwir |
+| `internet/proc·exec(args,envs) -> code, out, err` | 标准 internet rwir（子进程 + 捕获 @ 句柄） |
+| `vthread·call(funckey)` | native builtin（同 vid 动态调用） |
+| `string·* / kv·* / xv·*` | native builtin |
+
+`shell·run` / `python·run` 是 `lib/` 下的 kv rwfunc：把命令包成 `{"bash","-c",cmd}` /
+`{"python3","-c",code}` 交给 `internet/proc·exec`，绑定 stdout/stderr 写槽即捕获（`@[]uint8`
+扩展句柄，`println` 读时按 body 前缀 `/internet/{host}/proc` 路由回兑现物理字节），返回 stdout。
+
+## 已验证（0rs）
+
+- `KVLANG_LIB=lib kvlang` 引导：config/语法速览/系统提示三 init 于 layout 期种入，rwfunc 持久。
+- `kvlang byteseek·main`：REPL 循环、`exit` 退出、无 key 时 `llm·call` 回填 error 且 `byteseek·run` 跳过。
+- `byteseek·run(entry)` → `vthread·call`：同 vid 动态执行入库的 session 程序，其内 rwir 就地派发。
+- `shell·run` / `python·run`：经 `internet/proc·exec` 捕获子进程 stdout 并透明兑现。
+- `make test`（无网络无 LLM，shm 后端）：vet + session 执行 + shell/python 捕获全链路通过。

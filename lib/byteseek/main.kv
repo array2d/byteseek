@@ -1,17 +1,14 @@
-# byteseek 主脑。main 播种提示词后进入 mainbrain 循环：
-#   input 等待用户输入 → llm·call 生成一段 kv 程序（layout 到 /lib/byteseek/session/<名>）
-#   → byteseek·run 执行它。输入 exit 退出。
-# main 无 scope（只是两个调用），可被直接 bootstrap；mainbrain 的 while/if 在嵌套帧里寻址。
+# byteseek 主脑（全 kvlang，无自有 Rust）。config/语法速览/系统提示皆为 layout 期 init 种入，
+# main 不再播种，只进 mainbrain 循环：input 等输入 → llm·call 生成 kv 程序（layout 入库）→
+# byteseek·run 执行它。输入 exit 退出。byteseek 不是可执行文件，用 `kvlang byteseek·main` 驱动。
 
 lib byteseek {
 	rwfunc main() -> () {
-		local·init()
-		byteseek·seed_prompts()
 		byteseek·mainbrain()
 	}
 
 	rwfunc mainbrain() -> () {
-		running = 1                            # = 等价于 <-
+		running = 1
 		while (running == 1) {
 			input("byteseek> ") -> userinput
 			string·cmp(userinput, "exit") -> q
@@ -23,5 +20,16 @@ lib byteseek {
 			}
 		}
 		println("bye.")
+	}
+
+	# byteseek·run(entry)：在当前 vthread（同 vid）动态调用生成程序的入口 funckey，跑完回主循环。
+	rwfunc run(entry:[]char/utf32) -> () {
+		if (entry == "") { return }
+		string·find(entry, "error") -> iserr
+		if (iserr == 0) {
+			println("[byteseek] 跳过执行（生成失败）:", entry)
+			return
+		}
+		vthread·call(entry)
 	}
 }

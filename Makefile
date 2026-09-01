@@ -1,26 +1,26 @@
-# byteseek Makefile —— make 编译并安装到 /usr/bin 与 ~/.local/bin（/usr/bin 需 root：sudo -E make）。
-# 依赖 .so 由 ci/deps.sh 下载安装到 /usr/lib（kvspace_durable / kvlang_runtime / kvlang_layout）。
+# byteseek 全 kvlang（无 Rust，无编译产物）。byteseek 不是可执行文件，而是活在 kvspace 里的
+# 一棵 .kv 代码树，由标准 kvlang 工具链（kvlang / kvlanglayout）驱动。
+#   deps  下载 ABI .so 到 /usr/lib（kvlang 二进制需另装，见 README）
+#   boot  layout lib/ 全部 .kv 进 kvspace 并执行各 init（config/语法速览/系统提示种入）
+#   run   boot 后进入 REPL（kvlang byteseek·main）
+#   test  无网络无 LLM 自检（boot → layout tests/selftest.kv → run selftest·go）
+KVSPACE ?= redis://127.0.0.1:6379
+export KVSPACE
 
-BIN := byteseek
-PREFIX ?= /usr/bin
-CARGO ?= $(shell command -v cargo 2>/dev/null || printf '%s' '$(HOME)/.cargo/bin/cargo')
-OWNER ?= $(SUDO_USER)
+.PHONY: deps boot run test
 
-.PHONY: all install run clean
+deps:
+	./ci/deps.sh
 
-all: install
+boot:
+	KVLANG_LIB=lib kvlang
 
-install:
-	$(CARGO) build --release
-	install -d $(HOME)/.local/bin
-	install -m 755 target/release/$(BIN) $(HOME)/.local/bin/$(BIN)
-	@if [ -n "$(OWNER)" ]; then chown $(OWNER) $(HOME)/.local/bin/$(BIN); fi
-	install -d $(PREFIX)
-	install -m 755 target/release/$(BIN) $(PREFIX)/$(BIN)
-	@echo "✅ 已安装: $(HOME)/.local/bin/$(BIN) 与 $(PREFIX)/$(BIN)"
+run: boot
+	kvlang byteseek·main
 
-run: all
-	$(HOME)/.local/bin/$(BIN)
-
-clean:
-	$(CARGO) clean
+test: boot
+	kvlanglayout tests/selftest.kv "$(KVSPACE)"
+	@out=$$(kvlang selftest·go 2>&1); echo "$$out"; \
+	echo "$$out" | grep -q "vet(good)= ok" && \
+	echo "$$out" | grep -q "SESSION: selftest-shell" && \
+	echo "$$out" | grep -q "PY: 42" && echo "✅ selftest 通过" || { echo "❌ selftest 失败"; exit 1; }

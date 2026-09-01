@@ -2,12 +2,20 @@
 
 A KV-native agent substrate: an agent's *self* — its code, state, memory, and
 execution progress — all live in one addressable, persistent, self-modifiable KV
-tree (kvspace, backed by redis). LLM, shell, python, and sub-agents become
-first-class citizens of this tree as registered rwir. One process = one
-**corebrain**: lay the `.kv` into redis → register rwir → bootstrap a vthread →
-drive execution (kvlang mode 2), handling rwir in place.
+tree (kvspace, backed by redis/fs/shm/s3). LLM, shell, python, and sub-agents
+become first-class citizens of this tree through kvlang's standard rwir and kv
+`rwfunc`s. byteseek has no host language of its own and is not an executable: it
+*is* a tree of `.kv` code, driven by the standard `kvlang` toolchain.
 
-See `doc/substrate.md` for the architecture and implementation notes.
+```bash
+KVLANG_LIB=lib kvlang        # boot: lay all lib/*.kv into kvspace, run each init
+kvlang byteseek·main         # run: drive the already-laid-out funckey (REPL)
+```
+
+Booting runs the layout-time `init`s that seed config, the kvlang syntax brief,
+and the system prompt into the tree; running just drives the persisted funckey —
+no rebuild, because there is nothing to compile. See `doc/substrate.md` for the
+architecture and implementation notes.
 
 ## Roadmap: three stages
 

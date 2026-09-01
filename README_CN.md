@@ -1,12 +1,18 @@
 # byteseek
 
 KV 原生的 agent substrate：agent 的"自己"——代码、状态、记忆、执行进度——全部活在
-**同一棵可寻址、可持久、可自改的 KV 树**（kvspace，后端 redis）里。LLM、shell、
-python、子 agent 通过注册 rwir 成为这棵树里的一等公民。一个进程 = 一个
-**corebrain**：把 `.kv` 布局进 redis → 注册 rwir → bootstrap 一条 vthread →
-主导驱动执行（kvlang 模式 2），遇到 rwir 就地处理。
+**同一棵可寻址、可持久、可自改的 KV 树**（kvspace，后端 redis/fs/shm/s3）里。LLM、
+shell、python、子 agent 通过 kvlang 标准 rwir 与 kv `rwfunc` 成为这棵树里的一等公民。
+byteseek 没有自己的宿主语言，也不是可执行文件：它**就是**一棵 `.kv` 代码树，由标准
+`kvlang` 工具链驱动。
 
-架构与实现细节见 `doc/substrate.md`。
+```bash
+KVLANG_LIB=lib kvlang        # 引导：layout lib/ 全部 .kv 进 kvspace，并执行各 init
+kvlang byteseek·main         # 运行：驱动已入库的 funckey（进入 REPL）
+```
+
+引导执行 layout 期的各 `init`，把配置、kvlang 语法速览、系统提示种进树；运行只驱动持久化的
+funckey——无需重编译，因为没有可编译之物。架构与实现细节见 `doc/substrate.md`。
 
 ## 发展三阶段（roadmap）
 
