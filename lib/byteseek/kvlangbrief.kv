@@ -99,5 +99,22 @@ n = 42
 println("answer =", n)        # answer = 42（✅ 两个参数）
 # "answer = " + n -> s; println(s)   # ❌ TypeError：char + int
 ```
+
+## 自举：代码即数据（生成/校验/入库/运行）
+kv 代码是 KV 树里的数据，可运行时自产自运行：
+```kv
+kvlanglayout·vet(src) -> v        # 校验源码：合法 "ok"，否则错误信息
+kvlanglayout·format(src) -> f     # 规范化源码（parse → 格式化文本）
+kvlanglayout·layout(src) -> e     # 源码入库 /lib：成功空串，失败 "error: …"
+kvlanglayout·dump("/lib") -> d    # /lib 子树导出为可运行源码（含 # 槽位注释）
+vthread·run("pkg·func")           # 运行已入库函数到结束（嵌套 vthread；裸名 = /lib/<名>）
+```
+
+## 调试 / 暂停
+```kv
+debugger()                   # 内联断点：执行到此暂停（status 置 paused）
+vthread·setstatus("paused")  # 等价：设 vthread 状态（paused 即停住）
+```
+暂停后由外部把 `/vthread/{vid}/·status` 改回 `running` 续跑。
 """ -> /lib/byteseek.kvlangbrief
 }

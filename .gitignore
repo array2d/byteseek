@@ -2,4 +2,5 @@
 /libso/
 /reference/
 /byteseek
+/lib/local/
 *.bak
