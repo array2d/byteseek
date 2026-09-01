@@ -39,6 +39,7 @@ fn main() {
         rt,
         kv,
         dsn: dsn.clone(),
+        ext: None, // byteseek 用自有 run_fn 驱动（rwir::dispatch 就地处理），不走 kvlang_rs run_fn 的 ext 委托。
     };
 
     // 3) 注册 rwir（纯净集 + byteseek 自有）
