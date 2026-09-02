@@ -1,6 +1,6 @@
 # byteseek 自检（无网络、无 LLM）：验证全 kvlang 主脑的执行链——
 #   byteseek·run(entry) → vthread·call 在当前 vthread 动态执行生成程序；
-#   shell·run / python·run 经 internet/proc·exec 捕获子进程 stdout。
+#   shell·run / python·run 经 networld/proc·exec 捕获子进程 stdout。
 # 先 boot byteseek 库（KVLANG_LIB=lib kvlang），再 layout 本文件，最后 run selftest·go。
 # 期望输出:
 #   vet(good)= ok

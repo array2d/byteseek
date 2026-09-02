@@ -5,7 +5,7 @@ lib python {
 		println("🔧 python:", code)
 		noenv = map()
 		a = {"python3", "-c", code}
-		internet/proc·exec(a, noenv) -> ret, o, e
+		networld/proc·exec(a, noenv) -> ret, o, e
 		println("↳", o, e)
 		o -> out
 	}
