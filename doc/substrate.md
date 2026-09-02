@@ -109,18 +109,18 @@ byteseek 不再注册任何自有 Rust rwir。所需能力全部是 kvlang 标�
 | `json·to` / `json·from` | 标准 json rwir |
 | `http·call(method,header,url,body) -> resp` | 标准 http rwir |
 | `kvlanglayout·vet / ·format / ·layout / ·dump` | 标准 layout rwir |
-| `internet/proc·exec(args,envs) -> code, out, err` | 标准 internet rwir（子进程 + 捕获 @ 句柄） |
+| `networld/proc·exec(args,envs) -> code, out, err` | 标准 networld rwir（子进程 + 捕获 @ 句柄） |
 | `vthread·call(funckey)` | native builtin（同 vid 动态调用） |
 | `string·* / kv·* / xv·*` | native builtin |
 
 `shell·run` / `python·run` 是 `lib/` 下的 kv rwfunc：把命令包成 `{"bash","-c",cmd}` /
-`{"python3","-c",code}` 交给 `internet/proc·exec`，绑定 stdout/stderr 写槽即捕获（`@[]uint8`
-扩展句柄，`println` 读时按 body 前缀 `/internet/{host}/proc` 路由回兑现物理字节），返回 stdout。
+`{"python3","-c",code}` 交给 `networld/proc·exec`，绑定 stdout/stderr 写槽即捕获（`@[]uint8`
+扩展句柄，`println` 读时按 body 前缀 `/networld/{host}/proc` 路由回兑现物理字节），返回 stdout。
 
 ## 已验证（0rs）
 
 - `KVLANG_LIB=lib kvlang` 引导：config/语法速览/系统提示三 init 于 layout 期种入，rwfunc 持久。
 - `kvlang byteseek·main`：REPL 循环、`exit` 退出、无 key 时 `llm·call` 回填 error 且 `byteseek·run` 跳过。
 - `byteseek·run(entry)` → `vthread·call`：同 vid 动态执行入库的 session 程序，其内 rwir 就地派发。
-- `shell·run` / `python·run`：经 `internet/proc·exec` 捕获子进程 stdout 并透明兑现。
+- `shell·run` / `python·run`：经 `networld/proc·exec` 捕获子进程 stdout 并透明兑现。
 - `make test`（无网络无 LLM，shm 后端）：vet + session 执行 + shell/python 捕获全链路通过。
