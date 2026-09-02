@@ -17,7 +17,6 @@ KV 树**（kvspace，后端 redis/fs/shm/s3）里。LLM、shell、python、json�
 lib/byteseek/main.kv         main / mainbrain（REPL 循环）/ run（动态执行生成程序）
 lib/byteseek/llm.kv          llm·call(userinput) -> entry：代码脑，LLM 生成 kv 程序并入库
 lib/byteseek/prompt.kv       系统提示（lib prompt 顶层写 → byteseek/prompt·init，layout 期种入）
-lib/byteseek/kvlangbrief.kv  kvlang 语法速览（顶层写 → byteseek·init，layout 期种入）
 lib/byteseek/shell.kv        shell·run(cmd) -> out：bash 子进程，捕获 stdout
 lib/byteseek/python.kv       python·run(code) -> out：python3 子进程，捕获 stdout
 lib/local/config.kv          LLM 配置（lib local 顶层写 → local·init，layout 期种入；gitignored）
@@ -33,11 +32,13 @@ kvlang byteseek·main         # 运行：驱动已入库的 funckey（进入 REP
 ```
 
 `KVLANG_LIB=lib kvlang`（无 entry）复用标准 kvlang 的「layout 全部 lib + 跑各 init」机制：
-`config.kv`/`kvlangbrief.kv`/`prompt.kv` 的顶层写语句被 parser 合成为 `local·init` /
-`byteseek·init` / `byteseek/prompt·init`，在 layout 期执行一次，把配置、语法速览、系统提示
-种进 kvspace（跑完即删 init 子树）。rwfunc（`main`/`mainbrain`/`run`/`llm·call`/`shell·run`/
-`python·run`）留在 `/lib` 下持久。之后 `kvlang byteseek·main` 直接驱动 funckey，不再 layout、
-不再重跑 init。`byteseek·main` 是 funckey 路径（去 `/lib` 前缀），不是文件路径。
+`config.kv`/`prompt.kv` 的顶层写语句被 parser 合成为 `local·init` / `byteseek/prompt·init`，
+在 layout 期执行一次，把配置、系统提示种进 kvspace（跑完即删 init 子树）。kvlang 语法速览
+（`kvlangbrief`）由 **kvlang 自己的 stdlib**（`kvlang/stdlib/kvlangbrief.kv`，lib kvlang）在
+runtime-rs 启动时种入 `/lib/kvlang/kvlangbrief`，不属 byteseek lib。rwfunc（`main`/`mainbrain`/
+`run`/`llm·call`/`shell·run`/`python·run`）留在 `/lib` 下持久。之后 `kvlang byteseek·main`
+直接驱动 funckey，不再 layout、不再重跑 init。`byteseek·main` 是 funckey 路径（去 `/lib`
+前缀），不是文件路径。
 
 ## 状态树布局
 
@@ -46,7 +47,7 @@ kvlang byteseek·main         # 运行：驱动已入库的 funckey（进入 REP
 /byteseek/llm.key            LLM 鉴权 key（config.kv 种入，可空）
 /byteseek/llm.print          是否打印 LLM 交互（config.kv 种入）
 /byteseek/prompt/system      系统提示（prompt.kv 种入）
-/lib/byteseek.kvlangbrief    kvlang 语法速览（kvlangbrief.kv 种入；llm·call 拼进 system prompt）
+/lib/kvlang/kvlangbrief    kvlang 语法速览（kvlangbrief.kv 种入；llm·call 拼进 system prompt）
 /lib/byteseek/session/<name> llm·call 生成并入库的一次性程序（可寻址/持久）
 /vthread/{vid}/‥pc           执行到哪一步（KV 路径字符串，崩溃可恢复）
 /lib/<pkg>·<name>/...        编译后函数（签名 + 指令 + 源码 .src）
@@ -55,7 +56,7 @@ kvlang byteseek·main         # 运行：驱动已入库的 funckey（进入 REP
 ## 提示词与 LLM 参数也是 KV 数据
 
 系统提示不硬编码，而是 `prompt.kv` 的 `lib prompt` 顶层写把提示词落进 `/byteseek/prompt/system`；
-语法速览由 `kvlangbrief.kv` 落进 `/lib/byteseek.kvlangbrief`。`llm·call` 每轮把两者拼成
+语法速览由 `kvlangbrief.kv` 落进 `/lib/kvlang/kvlangbrief`。`llm·call` 每轮把两者拼成
 system prompt。接口地址与 key 由 `config.kv` 种入。换模型/网关/提示词只需改树，无需重编译——
 本就无可编译之物。
 

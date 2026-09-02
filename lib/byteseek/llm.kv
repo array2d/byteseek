@@ -13,7 +13,7 @@ lib llm {
 		kv·get("/byteseek/llm.print") -> print
 		if (print != "0") { println("[llm] 需求:", userinput) }
 		kv·get("/byteseek/prompt/system") -> sys
-		kv·get("/lib/byteseek.kvlangbrief") -> brief
+		kv·get("/lib/kvlang/kvlangbrief") -> brief
 		sys + "\n\n=== kvlang 语法速览 ===\n" + brief -> sys
 		"请把下面的需求翻译成一段 kvlang 程序。严格按系统提示的格式输出，只输出 <name>/<kv> 两段，不要解释：\n\n" + userinput -> user
 		sys -> /tmp/esc·sys
