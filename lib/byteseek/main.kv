@@ -1,6 +1,6 @@
-# byteseek 主脑（全 kvlang，无自有 Rust）。config/语法速览/系统提示皆为 layout 期 init 种入，
-# main 不再播种，只进 mainbrain 循环：input 等输入 → llm·call 生成 kv 程序（layout 入库）→
-# byteseek·run 执行它。输入 exit 退出。byteseek 不是可执行文件，用 `kvlang byteseek·main` 驱动。
+// byteseek 主脑（全 kvlang，无自有 Rust）。config/语法速览/系统提示皆为 layout 期 init 种入，
+// main 不再播种，只进 mainbrain 循环：input 等输入 → 记忆召回 → llm·call 生成 kv 程序（layout 入库）→
+// byteseek·run 执行它。输入 exit 退出。byteseek 不是可执行文件，用 `kvlang byteseek·main` 驱动。
 
 lib byteseek {
 	rwfunc main() -> () {
@@ -13,16 +13,22 @@ lib byteseek {
 			input("byteseek> ") -> userinput
 			string·cmp(userinput, "exit") -> q
 			if (q == 0) {
-				running <- 0
+				running = 0
 			} else {
-				llm·call(userinput) -> entry
+				byteseek/memory·recall(userinput) -> mem
+				if (mem == "") {
+					userinput -> prompt
+				} else {
+					userinput + "\n\n[相关记忆]\n" + mem -> prompt
+				}
+				llm·call(prompt) -> entry
 				byteseek·run(entry)
 			}
 		}
 		println("bye.")
 	}
 
-	# byteseek·run(entry)：在当前 vthread（同 vid）动态调用生成程序的入口 funckey，跑完回主循环。
+	// byteseek·run(entry)：在当前 vthread（同 vid）动态调用生成程序的入口 funckey，跑完回主循环。
 	rwfunc run(entry:[]char/utf32) -> () {
 		if (entry == "") { return }
 		string·find(entry, "error") -> iserr

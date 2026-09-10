@@ -1,6 +1,6 @@
-# lib llm —— 代码脑（kvlang 自举，替代 Rust llm.rs 的 codegen）。
-# llm·call(userinput) -> entry：调 LLM 生成 kv 程序，wrap 进 lib byteseek/session/<name>，
-# vet + layout 入库，返回入口名 byteseek/session/<name>·init。
+// lib llm —— 代码脑（kvlang 自举，替代 Rust llm.rs 的 codegen）。
+// llm·call(userinput) -> entry：调 LLM 生成 kv 程序，wrap 进 lib byteseek/session/<name>，
+// vet + layout 入库，返回入口名 byteseek/session/<name>·init。
 
 lib llm {
 	rwfunc call(userinput:[]char/utf32) -> (entry:[]char/utf32) {

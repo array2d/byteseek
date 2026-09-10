@@ -23,4 +23,5 @@ test: boot
 	@out=$$(kvlang selftest·go 2>&1); echo "$$out"; \
 	echo "$$out" | grep -q "vet(good)= ok" && \
 	echo "$$out" | grep -q "SESSION: selftest-shell" && \
-	echo "$$out" | grep -q "PY: 42" && echo "✅ selftest 通过" || { echo "❌ selftest 失败"; exit 1; }
+	echo "$$out" | grep -q "PY: 42" && \
+	echo "$$out" | grep -q "MEM: theme" && echo "✅ selftest 通过" || { echo "❌ selftest 失败"; exit 1; }
