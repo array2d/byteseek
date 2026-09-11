@@ -70,4 +70,34 @@ lib llm {
 		"byteseek/session/" + name + "·init" -> entry
 		if (print != "0") { println("[llm] 入口:", entry) }
 	}
+
+	// llm·raw(sys, user) -> text：裸 LLM 调用，返回 assistant 文本（不生成/不执行 kv 代码）。
+	// 供 memgen 等需要「LLM 直接产出一段文本」的元能力复用。
+	rwfunc raw(sys:[]char/utf32, user:[]char/utf32) -> (text:[]char/utf32) {
+		kv·get("/byteseek/llm.key") -> key
+		if (key == "") {
+			"error: 未设置 DEEPSEEK_API_KEY" -> text
+			return
+		}
+		kv·get("/byteseek/llm.api") -> url
+		sys -> /tmp/esc·sys
+		json·to(/tmp/esc·sys) -> sys_j
+		user -> /tmp/esc·user
+		json·to(/tmp/esc·user) -> user_j
+		"{\"model\":\"deepseek-v4-flash\",\"messages\":[{\"role\":\"system\",\"content\":" + sys_j + "},{\"role\":\"user\",\"content\":" + user_j + "}],\"temperature\":0.2,\"top_p\":1.0,\"max_tokens\":1024,\"stream\":false}" -> body
+		"Content-Type: application/json\nAuthorization: Bearer " + key -> header
+		http·call("POST", header, url, body) -> resp
+		string·find(resp, "choices") -> has_choices
+		if (has_choices < 0) {
+			"error: LLM 响应异常: " + resp -> text
+			return
+		}
+		json·from(resp) -> /tmp/llmresp
+		kv·get("/tmp/llmresp·choices·[0]·message·content") -> content
+		if (content == "") {
+			"error: LLM 响应无内容: " + resp -> text
+			return
+		}
+		content -> text
+	}
 }

@@ -1,0 +1,58 @@
+// byteseek 能力记忆生成器（全 kvlang）：把 /lib 下各目录的能力浓缩成一条 ·mem 记忆 key。
+//   后缀约定：目录 /lib/<name> 的能力记忆存在 key /lib/<name>.mem。
+//   fnlist(name)       —— 枚举 /lib/<name>· 下的函数/常量名（.src 条目去后缀，目录条目跳过）。
+//   summarize(name)    —— 若 /lib/<name>·mem 不存在，用 LLM 生成中文能力记忆并写入该 key。
+//   build()            —— 对 kvlang stdlib 的目录递归概括一次（幂等：已有 ·mem 即跳过）。
+lib byteseek {
+	lib memgen {
+		rwfunc fnlist(name:[]char/utf32) -> (listing:[]char/utf32) {
+			"" -> listing
+			"/lib/" + name + "·" -> mdir
+			kv·listlen(mdir) -> n
+			i = 0
+			while (i < n) {
+				kv·listn(mdir, i) -> entry
+				char/utf32(entry) -> entry
+				string·len(entry) -> elen
+				string·find(entry, ".src") -> p
+				if (p >= 0) {
+					elen - 4 -> cut
+					string·slice(entry, 0, cut) -> fn
+					if (listing == "") { fn -> listing } else { listing + ", " + fn -> listing }
+				} else {
+					elen - 1 -> last
+					string·char(entry, last) -> tail
+					if (tail != "/") {
+						if (listing == "") { entry -> listing } else { listing + ", " + entry -> listing }
+					}
+				}
+				i + 1 -> i
+			}
+		}
+
+		rwfunc summarize(name:[]char/utf32) -> () {
+			kv·has("/lib/" + name + ".mem") -> exists
+			if (exists == true) { return }
+			fnlist(name) -> listing
+			"你是 kvlang 能力记忆生成器。kvspace 目录 /lib/" + name + " 提供以下能力：" + listing + "。请用中文写一段不超过 200 字的紧凑能力记忆：用 · 分隔，每个能力名后跟一句话用途。只输出记忆文本本身，不要代码、不要解释、不要 markdown。" -> user
+			llm·raw("你是 kvlang 能力记忆生成器。只输出简洁的中文记忆文本。", user) -> text
+			string·find(text, "error") -> iserr
+			if (iserr == 0) {
+				println("[memgen] 概括失败:", name, text)
+				return
+			}
+			kv·set("/lib/" + name + ".mem", text)
+			println("[memgen] 已生成:", "/lib/" + name + ".mem")
+		}
+
+		rwfunc build() -> () {
+			byteseek/memgen·summarize("math")
+			byteseek/memgen·summarize("string")
+			byteseek/memgen·summarize("kv")
+			byteseek/memgen·summarize("xv")
+			byteseek/memgen·summarize("http")
+			byteseek/memgen·summarize("time")
+			byteseek/memgen·summarize("time/duration")
+		}
+	}
+}
