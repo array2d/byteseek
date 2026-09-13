@@ -8,6 +8,7 @@ lib byteseek {
 	}
 
 	rwfunc mainbrain() -> () {
+		byteseek/memgen·build()
 		running = 1
 		while (running == 1) {
 			input("byteseek> ") -> userinput
@@ -15,11 +16,13 @@ lib byteseek {
 			if (q == 0) {
 				running = 0
 			} else {
+				byteseek/memory·classify(userinput) -> cat
+				byteseek/memory·ensure_category(cat)
 				byteseek/memory·recall(userinput) -> mem
 				if (mem == "") {
-					userinput -> prompt
+					userinput + "\n\n[类别] " + cat -> prompt
 				} else {
-					userinput + "\n\n[相关记忆]\n" + mem -> prompt
+					userinput + "\n\n[类别] " + cat + "\n\n[相关记忆]\n" + mem -> prompt
 				}
 				llm·call(prompt) -> entry
 				byteseek·run(entry)

@@ -1,7 +1,9 @@
-// byteseek 记忆库（全 kvlang）：记忆都活在 /byteseek/memory/<key> 的 kvspace 树里。
+// byteseek 记忆库（全 kvlang）：记忆都活在 /byteseek/memory/ 的 kvspace 树里。
 //   remember(key, value) —— 写一条记忆到 /byteseek/memory/<key>。
 //   recall(query) —— 记忆检查：扫描 /byteseek/memory/ 子树，自动滤出与 query 相关的关键树路径，
 //                    返回多行 "key = value"，供 mainbrain 注入 LLM 上下文。
+//   classify(msg) —— 用 LLM 把消息归入一个简短类别。
+//   ensure_category(cat) —— 若类别不存在，则在 /byteseek/memory/cat/<cat> 新建。
 // 匹配规则：query 与 key 互相包含，或 query 与 value 互相包含（子串匹配，大小写敏感）。
 lib byteseek {
 	lib memory {
@@ -17,27 +19,48 @@ lib byteseek {
 			while (i < n) {
 				kv·listn("/byteseek/memory/", i) -> key
 				char/utf32(key) -> key
-				"/byteseek/memory/" + key -> path
-				kv·get(path) -> value
-				hit = 0
-				string·find(query, key) -> a
-				if (a != -1) { hit = 1 }
-				string·find(key, query) -> b
-				if (b != -1) { hit = 1 }
-				if (value != "") {
-					string·find(value, query) -> c
-					if (c != -1) { hit = 1 }
-					string·find(query, value) -> d
-					if (d != -1) { hit = 1 }
-				}
-				if (hit == 1) {
-					if (ctx == "") {
-						key + " = " + value -> ctx
-					} else {
-						ctx + "\n" + key + " = " + value -> ctx
+				if (key != "cat") {
+					"/byteseek/memory/" + key -> path
+					kv·get(path) -> value
+					hit = 0
+					string·find(query, key) -> a
+					if (a != -1) { hit = 1 }
+					string·find(key, query) -> b
+					if (b != -1) { hit = 1 }
+					if (value != "") {
+						string·find(value, query) -> c
+						if (c != -1) { hit = 1 }
+						string·find(query, value) -> d
+						if (d != -1) { hit = 1 }
+					}
+					if (hit == 1) {
+						if (ctx == "") {
+							key + " = " + value -> ctx
+						} else {
+							ctx + "\n" + key + " = " + value -> ctx
+						}
 					}
 				}
 				i + 1 -> i
+			}
+		}
+
+		rwfunc classify(msg:[]char/utf32) -> (cat:[]char/utf32) {
+			"请把下面这条用户消息归入一个简短中文类别（2-6字，如：编程、文件、shell、数学、闲聊）。只输出类别名本身，不要任何空格、换行、标点或解释。\n\n消息：" + msg -> user
+			llm·raw("你是消息分类器。只输出一个简短中文类别名。", user) -> cat
+			string·find(cat, "error") -> e
+			if (e == 0) {
+				"未分类" -> cat
+			}
+		}
+
+		rwfunc ensure_category(cat:[]char/utf32) -> () {
+			if (cat == "") { return }
+			"/byteseek/memory/cat/" + cat -> path
+			kv·has(path) -> exists
+			if (exists == false) {
+				kv·set(path, "1")
+				println("[memory] 新类别:", cat)
 			}
 		}
 	}
