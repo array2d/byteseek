@@ -8,10 +8,10 @@ lib byteseek {
 		rwfunc fnlist(name:[]char/utf32) -> (listing:[]char/utf32) {
 			"" -> listing
 			"/lib/" + name + "·" -> mdir
-			kv·listlen(mdir) -> n
+			kvspace·listlen(mdir) -> n
 			i = 0
 			while (i < n) {
-				kv·listn(mdir, i) -> entry
+				kvspace·listn(mdir, i) -> entry
 				char/utf32(entry) -> entry
 				string·len(entry) -> elen
 				string·find(entry, ".src") -> p
@@ -31,7 +31,7 @@ lib byteseek {
 		}
 
 		rwfunc summarize(name:[]char/utf32) -> () {
-			kv·has("/lib/" + name + ".mem") -> exists
+			kvspace·has("/lib/" + name + ".mem") -> exists
 			if (exists == true) { return }
 			fnlist(name) -> listing
 			"你是 kvlang 能力记忆生成器。kvspace 目录 /lib/" + name + " 提供以下能力：" + listing + "。请用中文写一段不超过 200 字的紧凑能力记忆：用 · 分隔，每个能力名后跟一句话用途。只输出记忆文本本身，不要代码、不要解释、不要 markdown。" -> user
@@ -41,7 +41,7 @@ lib byteseek {
 				println("[memgen] 概括失败:", name, text)
 				return
 			}
-			kv·set("/lib/" + name + ".mem", text)
+			kvspace·set("/lib/" + name + ".mem", text)
 			println("[memgen] 已生成:", "/lib/" + name + ".mem")
 		}
 

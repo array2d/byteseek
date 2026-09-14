@@ -4,8 +4,8 @@
 lib shell {
 	rwfunc run(cmd:[]char/utf32) -> (out:[]char/utf32) {
 		println("🔧 shell:", cmd)
-		noenv = map()
-		a = {"bash", "-c", cmd}
+		noenv:[int64]·[]char/utf32 = {}
+		a:[int64]·[]char/utf32 = {"bash", "-c", cmd}
 		networld/proc·exec(a, noenv) -> code, o, e
 		println("↳", o, e)
 		o -> out

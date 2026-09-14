@@ -3,8 +3,8 @@
 lib python {
 	rwfunc run(code:[]char/utf32) -> (out:[]char/utf32) {
 		println("🔧 python:", code)
-		noenv = map()
-		a = {"python3", "-c", code}
+		noenv:[int64]·[]char/utf32 = {}
+		a:[int64]·[]char/utf32 = {"python3", "-c", code}
 		networld/proc·exec(a, noenv) -> ret, o, e
 		println("↳", o, e)
 		o -> out
