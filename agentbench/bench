@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# agentbench 入口：所有重依赖（human-eval / evalplus / swebench / datasets）在 BENCH_HOME 的 venv 里。
+set -euo pipefail
+BENCH_HOME=${BENCH_HOME:-/home/peng.li24/benchmarks}
+PY=$BENCH_HOME/venv/bin/python
+[ -x "$PY" ] || { echo "缺少 $PY（先按 agentbench/README.md 安装基准框架）" >&2; exit 2; }
+exec "$PY" "$(dirname "$(readlink -f "$0")")/bench.py" "$@"
