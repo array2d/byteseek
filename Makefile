@@ -1,6 +1,6 @@
 # byteseek 全 kvlang（无 Rust，无编译产物）。byteseek 不是可执行文件，而是活在 kvspace 里的
 # 一棵 .kv 代码树，由标准 kvlang 工具链（kvlang / kvlanglayout）驱动。
-#   deps  下载 ABI .so 到 /usr/lib（kvlang 二进制需另装，见 README）
+#   deps  装 kvlang 最新 release（bin/kvlang·kvlanglayout·kvspace + 库 + 头 → /usr）
 #   boot  layout lib/ 全部 .kv 进 kvspace 并执行各 init（config/语法速览/系统提示种入）
 #   run   boot 后进入 REPL（kvlang byteseek·main）
 #   test  无网络无 LLM 自检（boot → layout tests/selftest.kv → run selftest·go）
