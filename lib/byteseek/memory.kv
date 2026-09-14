@@ -9,19 +9,19 @@ lib byteseek {
 	lib memory {
 		rwfunc remember(key:[]char/utf32, value:[]char/utf32) -> () {
 			"/byteseek/memory/" + key -> path
-			kv·set(path, value)
+			kvspace·set(path, value)
 		}
 
 		rwfunc recall(query:[]char/utf32) -> (ctx:[]char/utf32) {
 			"" -> ctx
-			kv·listlen("/byteseek/memory/") -> n
+			kvspace·listlen("/byteseek/memory/") -> n
 			i = 0
 			while (i < n) {
-				kv·listn("/byteseek/memory/", i) -> key
+				kvspace·listn("/byteseek/memory/", i) -> key
 				char/utf32(key) -> key
 				if (key != "cat") {
 					"/byteseek/memory/" + key -> path
-					kv·get(path) -> value
+					kvspace·get(path) -> value
 					hit = 0
 					string·find(query, key) -> a
 					if (a != -1) { hit = 1 }
@@ -57,9 +57,9 @@ lib byteseek {
 		rwfunc ensure_category(cat:[]char/utf32) -> () {
 			if (cat == "") { return }
 			"/byteseek/memory/cat/" + cat -> path
-			kv·has(path) -> exists
+			kvspace·has(path) -> exists
 			if (exists == false) {
-				kv·set(path, "1")
+				kvspace·set(path, "1")
 				println("[memory] 新类别:", cat)
 			}
 		}

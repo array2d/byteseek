@@ -87,19 +87,19 @@ $BENCH_HOME/venv/bin/pip install human-eval evalplus swebench datasets huggingfa
 | `eval humaneval+`（同一批 gold 样本） | `base 0.9878 / plus 0.8537`（canonical 解在 extra tests 上的已知表现） |
 | `run swebench-lite --agent gold` | 产出 5 题标准格式 predictions |
 | `eval swebench-lite` | 无 docker → 退出码 2，并打印可在有 Docker 机器直接执行的命令 |
-| `run humaneval --agent byteseek` | **阻塞**：见下 |
+| `run humaneval --agent byteseek --limit 20` + `eval` | **`pass@1 = 0.80`**（20 题，真 LLM，单条轨迹无重试） |
 
-## 已知阻塞：byteseek lib 与 kvlang 版本漂移
+## byteseek lib 与 kvlang 版本对齐（2026-09-14 已修）
 
-`KVLANG_LIB=lib kvlang` 当前有 3 个文件 layout 失败，byteseek 的 agent 链路因此不可用
-（`--agent byteseek` 会在引导后立刻报错退出，不再静默产出空答案）：
+byteseek 现在只跟 kvlang 最新 release（`ci/deps.sh`，无 deps.json），lib 必须持续对齐 kvlang
+语法。已修的三类问题：
 
-| 文件 | 报错 | 原因 |
-|------|------|------|
-| `lib/byteseek/llm.kv` | `member write on undefined container "/tmp/esc"` | `/tmp/esc·sys` 用了 `·`（成员分隔符），新 kvlang 要求先显式声明容器；路径应写 `/tmp/esc/sys` |
-| `lib/byteseek/shell.kv` | `container literal {…} on "noenv" needs a map langtype` | 未标注 langtype 的 `{}` 字面量 |
-| `lib/byteseek/python.kv` | 同上（`a`） | 同上 |
+| 位置 | 旧 | 新 |
+|------|-----|-----|
+| `llm.kv` | `/tmp/esc·sys`（`·` 被当成员分隔符） | `/tmp/esc/sys` |
+| `shell.kv` / `python.kv` | `noenv = map()`、`a = {"bash", …}`（无 langtype 的 `{}`） | `noenv:[int64]·[]char/utf32 = {}`、`a:[int64]·[]char/utf32 = {"bash", …}` |
+| `llm.kv` / `memory.kv` / `memgen.kv` | `kv·get/set/has/listlen/listn` | `kvspace·get/set/has/listlen/listn` |
+| `llm.kv` | `kvlanglayout·vet/layout` | `kvlang·vet/layout` |
 
-byteseek `deps.json` 锁的是 kvlang `v0.2.15`，而本机是 `v0.2.18-9`——`/usr/bin/kvlang` 与
-`kvlang/bin/kvlang` 两个二进制都同样失败。这与本次改造无关：修 lib 或对齐 deps 后，
-`--agent byteseek` 即可跑通。
+自检：`KVLANG_LIB=lib kvlang` 无 layout 报错，`/lib/{llm·call,shell·run,python·run}` 均在；
+`shell·run` / `python·run` 冒烟输出正确；`--agent byteseek` 可跑完整链路。

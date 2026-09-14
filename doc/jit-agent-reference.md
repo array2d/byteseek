@@ -82,7 +82,7 @@ agent 程序（`harness_ops.py` 解析模型的 5 个 tagged block）。
    各成一个 `.kv` 库，`llm·call` 生成时按四模块组装，而非自由生成。
 2. **补 best-of-N 择优**：#7 的「n 变体实测择优」可直接借鉴 `selector.py`——生成 n 个
    候选 harness，跑完按 logprob 或 judge 评分，沉淀最优到 `/lib/byteseek/session/` 档案库。
-3. **generate→validate→repair 循环**：byteseek 已有 `kvlanglayout·vet` 闸门，可扩成
+3. **generate→validate→repair 循环**：byteseek 已有 `kvlang·vet` 闸门，可扩成
    JIT 式完整循环（生成 → vet/试跑 → 反馈 → repair）。
 4. **记忆模块对照**：#9/#10/#11 的实现可对照 `memobrain`（依赖感知推理图 + token 预算压缩）
    与 `resum`（摘要），选定一种在 kvspace 里落地。

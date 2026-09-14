@@ -4,22 +4,22 @@
 
 lib llm {
 	rwfunc call(userinput:[]char/utf32) -> (entry:[]char/utf32) {
-		kv·get("/byteseek/llm.key") -> key
+		kvspace·get("/byteseek/llm.key") -> key
 		if (key == "") {
 			"error: 未设置 DEEPSEEK_API_KEY" -> entry
 			return
 		}
-		kv·get("/byteseek/llm.api") -> url
-		kv·get("/byteseek/llm.print") -> print
+		kvspace·get("/byteseek/llm.api") -> url
+		kvspace·get("/byteseek/llm.print") -> print
 		if (print != "0") { println("[llm] 需求:", userinput) }
-		kv·get("/byteseek/prompt/system") -> sys
-		kv·get("/lib/kvlang/kvlangbrief") -> brief
+		kvspace·get("/byteseek/prompt/system") -> sys
+		kvspace·get("/lib/kvlang/kvlangbrief") -> brief
 		sys + "\n\n=== kvlang 语法速览 ===\n" + brief -> sys
 		"请把下面的需求翻译成一段 kvlang 程序。严格按系统提示的格式输出，只输出 <name>/<kv> 两段，不要解释：\n\n" + userinput -> user
-		sys -> /tmp/esc·sys
-		json·to(/tmp/esc·sys) -> sys_j
-		user -> /tmp/esc·user
-		json·to(/tmp/esc·user) -> user_j
+		sys -> /tmp/esc/sys
+		json·to(/tmp/esc/sys) -> sys_j
+		user -> /tmp/esc/user
+		json·to(/tmp/esc/user) -> user_j
 		"{\"model\":\"deepseek-v4-flash\",\"messages\":[{\"role\":\"system\",\"content\":" + sys_j + "},{\"role\":\"user\",\"content\":" + user_j + "}],\"temperature\":0.2,\"top_p\":1.0,\"max_tokens\":4096,\"stream\":false}" -> body
 		"Content-Type: application/json\nAuthorization: Bearer " + key -> header
 		http·call("POST", header, url, body) -> resp
@@ -29,7 +29,7 @@ lib llm {
 			return
 		}
 		json·from(resp) -> /tmp/llmresp
-		kv·get("/tmp/llmresp·choices·[0]·message·content") -> content
+		kvspace·get("/tmp/llmresp·choices·[0]·message·content") -> content
 		if (content == "") {
 			"error: LLM 响应无内容: " + resp -> entry
 			return
@@ -56,12 +56,12 @@ lib llm {
 			println(kv)
 		}
 		"lib byteseek {\nlib session {\nlib " + name + " {\n" + kv + "\nbyteseek/session/" + name + "·main()\n}\n}\n}\n" -> wrapped
-		kvlanglayout·vet(wrapped) -> v
+		kvlang·vet(wrapped) -> v
 		if (v != "ok") {
 			"error: vet 失败: " + v -> entry
 			return
 		}
-		kvlanglayout·layout(wrapped) -> e2
+		kvlang·layout(wrapped) -> e2
 		string·find(e2, "error") -> has_err
 		if (has_err >= 0) {
 			e2 -> entry
@@ -74,16 +74,16 @@ lib llm {
 	// llm·raw(sys, user) -> text：裸 LLM 调用，返回 assistant 文本（不生成/不执行 kv 代码）。
 	// 供 memgen 等需要「LLM 直接产出一段文本」的元能力复用。
 	rwfunc raw(sys:[]char/utf32, user:[]char/utf32) -> (text:[]char/utf32) {
-		kv·get("/byteseek/llm.key") -> key
+		kvspace·get("/byteseek/llm.key") -> key
 		if (key == "") {
 			"error: 未设置 DEEPSEEK_API_KEY" -> text
 			return
 		}
-		kv·get("/byteseek/llm.api") -> url
-		sys -> /tmp/esc·sys
-		json·to(/tmp/esc·sys) -> sys_j
-		user -> /tmp/esc·user
-		json·to(/tmp/esc·user) -> user_j
+		kvspace·get("/byteseek/llm.api") -> url
+		sys -> /tmp/esc/sys
+		json·to(/tmp/esc/sys) -> sys_j
+		user -> /tmp/esc/user
+		json·to(/tmp/esc/user) -> user_j
 		"{\"model\":\"deepseek-v4-flash\",\"messages\":[{\"role\":\"system\",\"content\":" + sys_j + "},{\"role\":\"user\",\"content\":" + user_j + "}],\"temperature\":0.2,\"top_p\":1.0,\"max_tokens\":1024,\"stream\":false}" -> body
 		"Content-Type: application/json\nAuthorization: Bearer " + key -> header
 		http·call("POST", header, url, body) -> resp
@@ -93,7 +93,7 @@ lib llm {
 			return
 		}
 		json·from(resp) -> /tmp/llmresp
-		kv·get("/tmp/llmresp·choices·[0]·message·content") -> content
+		kvspace·get("/tmp/llmresp·choices·[0]·message·content") -> content
 		if (content == "") {
 			"error: LLM 响应无内容: " + resp -> text
 			return
