@@ -99,8 +99,10 @@ def prompt_for(kind, task, repo_dir=None):
 
 
 def extract(text):
-    m = re.search(re.escape(BEGIN) + r"\s*(.*?)\s*" + re.escape(END), text, re.S)
-    return m.group(1) if m else ""
+    # 提示词与生成源码里都会回显标记（llm.print=1 会打印需求与生成代码），
+    # 所以取**最后**一段：那才是 agent 真正打印的答案。
+    ms = re.findall(re.escape(BEGIN) + r"\s*(.*?)\s*" + re.escape(END), text, re.S)
+    return ms[-1] if ms else ""
 
 
 def strip_prompt(block, prompt):

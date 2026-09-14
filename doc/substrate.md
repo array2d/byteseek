@@ -79,8 +79,8 @@ rwfunc mainbrain() -> () {
 ```
 
 `llm·call(userinput)`：system prompt（提示词 + 语法速览）→ LLM → 解析 `<name>`/`<kv>` →
-包进 `lib byteseek { lib session { lib NAME { … NAME·main() } } }` → `kvlanglayout·vet` 校验 →
-通过后 `kvlanglayout·layout` 入库 → 返回入口 `byteseek/session/NAME·init`。生成失败回填
+包进 `lib byteseek { lib session { lib NAME { … NAME·main() } } }` → `kvlang·vet` 校验 →
+通过后 `kvlang·layout` 入库 → 返回入口 `byteseek/session/NAME·init`。生成失败回填
 `error: …`，`byteseek·run` 据前缀跳过执行。
 
 ## byteseek·run：同 vthread 动态执行（进程↔vid 1:1）
@@ -109,7 +109,7 @@ byteseek 不再注册任何自有 Rust rwir。所需能力全部是 kvlang 标�
 | `print` / `println` / `cerr` / `input` | 标准 term rwir |
 | `json·to` / `json·from` | 标准 json rwir |
 | `http·call(method,header,url,body) -> resp` | 标准 http rwir |
-| `kvlanglayout·vet / ·format / ·layout / ·dump` | 标准 layout rwir |
+| `kvlang·vet / ·format / ·layout / ·dump` | 标准 layout rwir |
 | `networld/proc·exec(args,envs) -> code, out, err` | 标准 networld rwir（子进程 + 捕获 @ 句柄） |
 | `vthread·call(funckey)` | native builtin（同 vid 动态调用） |
 | `string·* / kv·* / xv·*` | native builtin |
