@@ -24,4 +24,20 @@ test: boot
 	echo "$$out" | grep -q "vet(good)= ok" && \
 	echo "$$out" | grep -q "SESSION: selftest-shell" && \
 	echo "$$out" | grep -q "PY: 42" && \
-	echo "$$out" | grep -q "MEM: theme" && echo "✅ selftest 通过" || { echo "❌ selftest 失败"; exit 1; }
+	echo "$$out" | grep -q "RUN: ok" && \
+	echo "$$out" | grep -q "FAILKIND: fail" && \
+	echo "$$out" | grep -q "TRUNC: truncated" && \
+	echo "$$out" | grep -q "RUNTIME: runtime" && \
+	echo "$$out" | grep -q "TOOLS: true" && \
+	echo "$$out" | grep -q "REC: true" && \
+	echo "$$out" | grep -q "DENIED: 8" && \
+	echo "$$out" | grep -q "ALLOWED: 0" && \
+	echo "$$out" | grep -q "ARG: 9" && \
+	echo "$$out" | grep -q "TOOLCALL: true" && \
+	echo "$$out" | grep -q "MEM: theme" && \
+	echo "$$out" | grep -q "EDIT: 1 0 a c" && echo "✅ selftest 通过" || { echo "❌ selftest 失败"; exit 1; }
+	@dsn=$${REPL_SMOKE_DSN:-shm:///tmp/byteseek_repl_smoke}; \
+	KVLANG_LIB=lib KVSPACE=$$dsn kvlang >/dev/null 2>&1; \
+	KVSPACE=$$dsn kvlang -c 'kvspace·del("/byteseek/llm.key") -> _' >/dev/null 2>&1; \
+	out=$$(printf 'hi\nexit\n' | KVSPACE=$$dsn timeout 120 kvlang byteseek·main 2>&1); \
+	echo "$$out" | grep -q "bye." && ! echo "$$out" | grep -q "TypeError" && echo "✅ repl 冒烟通过" || { echo "❌ repl 冒烟失败"; echo "$$out" | tail -5; exit 1; }

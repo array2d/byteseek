@@ -1,0 +1,102 @@
+// byteseek 受管工具：prepare（参数校验）→ 闸门（before_hook）→ 调 stdlib 工具 → 每次调用记账。
+//   /byteseek/policy/deny  —— 换行分隔的路径前缀，命中即拒绝（对应 pi 的 beforeToolCall）
+//   /byteseek/toolcall/<n> —— 每次调用的记录 "name | target | 结果"
+// 只覆盖改写类（edit·write/replace/multi）；只读工具（read/grep/glob/fs·readtext）直接调 stdlib。
+// 返回码沿用 stdlib，另有 8 = 被策略拒绝（denied）、9 = 参数缺失（arg，如漏传 dry）。
+
+lib byteseek {
+	lib tool {
+		// prescreen(p, dry) -> code：prepare 期校验 —— 0 通过 / 9 参数缺失 / 8 被策略拒绝。
+		// 缺参在 kvlang 里读出来是字符串 "None"，这里显式挡住：宁可不做，也不要按默认值误落盘。
+		rwfunc prescreen(p:[]char/utf32, dry:int64) -> (code:int64) {
+			string·set(p) -> ps
+			string·set(dry) -> ds
+			if (string·cmp(ps, "None") == 0 || string·len(ps) == 0 || string·cmp(ds, "None") == 0) {
+				code = 9
+			} else {
+				byteseek/tool·denied(p) -> dn
+				if (dn) { code = 8 } else { code = 0 }
+			}
+		}
+
+		// denied(p) -> b：p 是否命中 /byteseek/policy/deny 里的路径前缀（无策略 = 不拒）。
+		rwfunc denied(p:[]char/utf32) -> (b:bool) {
+			b = false
+			kvspace·has("/byteseek/policy/deny") -> has
+			if (has) {
+				kvspace·get("/byteseek/policy/deny") -> raw
+				char/utf32(raw) -> list
+				parts:[int64]·[]char/utf32 = {}
+				string·lines(list) -> (parts, n)
+				string·len(p) -> plen
+				i = 0
+				while (i < n) {
+					kvspace·listn(parts, i) -> k
+					kvspace·get(parts, k) -> pre
+					char/utf32(pre) -> pre
+					string·len(pre) -> l
+					if (l > 0 && l <= plen) {
+						string·slice(p, 0, l) -> head
+						if (string·cmp(head, pre) == 0) { b = true }
+					}
+					i + 1 -> i
+				}
+			}
+		}
+
+		// callrec(name, target, res)：一次受管调用的记录落 /byteseek/toolcall/<n>。
+		rwfunc callrec(name:[]char/utf32, target:[]char/utf32, res:[]char/utf32) -> () {
+			kvspace·listlen("/byteseek/toolcall/") -> n
+			string·formatint(n, 10) -> no
+			name + " | " + target + " | " + res -> rec
+			"/byteseek/toolcall/" + no -> path
+			kvspace·set(path, rec)
+		}
+
+		rwfunc edit_write(p:[]char/utf32, t:[]char/utf32) -> (n:int64, code:int64) {
+			byteseek/tool·prescreen(p, 0) -> pc
+			string·set(t) -> ts
+			if (pc == 0 && string·cmp(ts, "None") == 0) { pc = 9 }
+			if (pc != 0) {
+				n = -1
+				code = pc
+				byteseek/tool·callrec("edit_write", p, "reject")
+			} else {
+				networld/edit·write(p, t) -> (n, code)
+				string·formatint(code, 10) -> cs
+				byteseek/tool·callrec("edit_write", p, cs)
+			}
+		}
+
+		rwfunc edit_replace(p:[]char/utf32, old:[]char/utf32, new:[]char/utf32,
+		                    dry:int64) -> (done:int64, hit:int64, code:int64) {
+			byteseek/tool·prescreen(p, dry) -> pc
+			if (pc != 0) {
+				done = 0
+				hit = 0
+				code = pc
+				byteseek/tool·callrec("edit_replace", p, "reject")
+			} else {
+				networld/edit·replace(p, old, new, dry) -> (done, hit, code)
+				string·formatint(code, 10) -> cs
+				byteseek/tool·callrec("edit_replace", p, cs)
+			}
+		}
+
+		rwfunc edit_multi(p:[]char/utf32, olds:*[int64]·[]char/utf32,
+		                  news:*[int64]·[]char/utf32, dry:int64) -> (
+		                  done:int64, bad:int64, code:int64) {
+			byteseek/tool·prescreen(p, dry) -> pc
+			if (pc != 0) {
+				done = 0
+				bad = -1
+				code = pc
+				byteseek/tool·callrec("edit_multi", p, "reject")
+			} else {
+				networld/edit·multi(p, olds, news, dry) -> (done, bad, code)
+				string·formatint(code, 10) -> cs
+				byteseek/tool·callrec("edit_multi", p, cs)
+			}
+		}
+	}
+}

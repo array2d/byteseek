@@ -17,9 +17,11 @@ KV 树**（kvspace，后端 redis/fs/shm/s3）里。LLM、shell、python、json�
 lib/byteseek/main.kv         main / mainbrain（REPL 循环）/ run（动态执行生成程序）
 lib/byteseek/llm.kv          llm·call(userinput) -> entry：代码脑，LLM 生成 kv 程序并入库
 lib/byteseek/prompt.kv       系统提示（lib prompt 顶层写 → byteseek/prompt·init，layout 期种入）
-lib/byteseek/shell.kv        shell·run(cmd) -> out：bash 子进程，捕获 stdout
-lib/byteseek/python.kv       python·run(code) -> out：python3 子进程，捕获 stdout
+lib/byteseek/memory.kv       记忆：remember / recall / classify（类别名跟随消息语言）/ lang
+lib/byteseek/memgen.kv       能力记忆：把 /lib/<name> 浓缩成 ·mem 条目
+lib/byteseek/tools.kv        工具清单：layout 期把工具声明种进 /byteseek/tools/，manifest() 渲染
 lib/local/config.kv          LLM 配置（lib local 顶层写 → local·init，layout 期种入；gitignored）
+vendor: kvlang stdlib        工具能力全在 stdlib——networld/shell·run / networld/python·run / networld/*
 ```
 
 ## 引导与运行
@@ -36,7 +38,7 @@ kvlang byteseek·main         # 运行：驱动已入库的 funckey（进入 REP
 在 layout 期执行一次，把配置、系统提示种进 kvspace（跑完即删 init 子树）。kvlang 语法速览
 （`kvlangbrief`）由 **kvlang 自己的 stdlib**（`kvlang/stdlib/kvlangbrief.kv`，lib kvlang）在
 runtime-rs 启动时种入 `/lib/kvlang/kvlangbrief`，不属 byteseek lib。rwfunc（`main`/`mainbrain`/
-`run`/`llm·call`/`shell·run`/`python·run`）留在 `/lib` 下持久。之后 `kvlang byteseek·main`
+`run`/`llm·call`/`networld/shell·run`/`networld/python·run`）留在 `/lib` 下持久。之后 `kvlang byteseek·main`
 直接驱动 funckey，不再 layout、不再重跑 init。`byteseek·main` 是 funckey 路径（去 `/lib`
 前缀），不是文件路径。
 
@@ -96,7 +98,7 @@ rwfunc run(entry:[]char/utf32) -> () {
 
 `vthread·call(funckey)` 是 kvlang 的 native builtin（`runtime/src/builtin.c`）：在**当前 vthread**
 （同 vid）按运行时 funckey 造一次动态 `OP_CALL`，跑到被调函数结束再回到本指令的 NextPc。与
-`vthread·run` 不同——不新开 vid、不 WATCH 挂起——被调程序里的 rwir（`println`/`shell·run`/…）
+`vthread·run` 不同——不新开 vid、不 WATCH 挂起——被调程序里的 rwir（`println`/`networld/shell·run`/…）
 由当前驱动就地派发。故一次 REPL 请求、生成程序的执行、其内工具调用全在同一进程同一 vid 内完成，
 契合「一个进程 ⟺ 一条 vthread」。
 
@@ -114,14 +116,51 @@ byteseek 不再注册任何自有 Rust rwir。所需能力全部是 kvlang 标�
 | `vthread·call(funckey)` | native builtin（同 vid 动态调用） |
 | `string·* / kv·* / xv·*` | native builtin |
 
-`shell·run` / `python·run` 是 `lib/` 下的 kv rwfunc：把命令包成 `{"bash","-c",cmd}` /
+`networld/shell·run` / `networld/python·run` 是 `lib/` 下的 kv rwfunc：把命令包成 `{"bash","-c",cmd}` /
 `{"python3","-c",code}` 交给 `networld/proc·exec`，绑定 stdout/stderr 写槽即捕获（`@[]uint8`
 扩展句柄，`println` 读时按 body 前缀 `/networld/{host}/proc` 路由回兑现物理字节），返回 stdout。
+
+## 文件编辑：networld/edit（kvlang stdlib）
+
+`networld/edit` 是 kvlang stdlib（`kvlang/stdlib/networld/edit.kv`，tutorial
+`14-networld/12-edit.kv`）里 `networld/fs`（字节原语 + 只读检索）之上的**改写语义层**：
+
+| 工具 | 语义 |
+|------|------|
+| `networld/edit·read(p, from, lines)` | 行号窗口视图（给模型看，不是全文 dump），返回 (视图, 总行数, 字节数) |
+| `networld/edit·write(p, t)` | UTF-8 覆盖写 + 回读校验 |
+| `networld/edit·replace(p, old, new, dry)` | 单处精确替换：`old` 必须**恰命中 1 处**，否则一个字节都不动 |
+| `networld/edit·multi(p, olds, news, dry)` | 事务式多处替换：全部成功才落盘 |
+
+返回码统一：`0` 成功 / `1` 未找到 / `2` 歧义（命中多处）/ `3` 不可读 / `4` 写失败 / `5` 回读不一致 /
+`6` 两数组长度不等。库不产出话术——「怎么说给模型听」属 harness 策略。
+
+## 工具调用边界（issue #72）
+
+pi 的 toolResult 边界在 byteseek 里落到 KV 树上：
+
+| 环节 | 落点 | 说明 |
+|------|------|------|
+| 工具清单 | `/byteseek/tools/*` + `byteseek/tools·manifest()` | 树数据；`llm·call` 拼 system prompt 时注入《可用工具》段，新增工具 = 写一条 |
+| 执行 | `byteseek·run(entry) -> (kind, detail)` | `vthread·create` + `vthread·run` 跑在**子 vid**，父（会话）不死 |
+| 记账 | `/byteseek/tool/<n> = "kind \| detail \| entry"` | 可寻址、可复盘；detail 截断到 300 字 |
+| 用量 | `/byteseek/usage/<n>` + `usage/last` = `prompt=… completion=… total=…` | 每次 LLM 调用记一次（`llm·usage()`） |
+| 程序自报 | `/byteseek/last/result` = `ok` / `fail: 原因` | 工具级失败（如 `edit·replace` code != 0）由程序按协议上报 |
+| 回灌 | `byteseek·solve(prompt)` | 失败把 `[上轮执行未成功] kind：detail` 拼回 prompt，有界重试 ≤3 轮 |
+
+kind 分类：`truncated`（被 max_tokens 截断）/ `vet`（生成物不过闸）/ `runtime`（子 vthread 报错，
+读 `/vthread/<vid>/‥error/msg`）/ `fail`（程序自报失败）/ `ok` / `empty`。
+
+配套 runtime 语义：`vthread·run(vid)` 下**子 vthread 自己失败不再冒泡杀死父**——监督者活着读
+`/vthread/<vid>/‥status` 与 `‥error/msg`（一个子任务失败不该结束整条会话）。
+
+落盘是原子的：`networld/edit·write/replace/multi` 都走 `networld/edit·commit` —— 写 `<p>.tmp`
+→ `networld/fs·rename` 覆盖 p → 回读校验；失败时 p 保持原样，不留半截文件。
 
 ## 已验证（0rs）
 
 - `KVLANG_LIB=lib kvlang` 引导：config/语法速览/系统提示三 init 于 layout 期种入，rwfunc 持久。
 - `kvlang byteseek·main`：REPL 循环、`exit` 退出、无 key 时 `llm·call` 回填 error 且 `byteseek·run` 跳过。
 - `byteseek·run(entry)` → `vthread·call`：同 vid 动态执行入库的 session 程序，其内 rwir 就地派发。
-- `shell·run` / `python·run`：经 `networld/proc·exec` 捕获子进程 stdout 并透明兑现。
+- `networld/shell·run` / `networld/python·run`：经 `networld/proc·exec` 捕获子进程 stdout 并透明兑现。
 - `make test`（无网络无 LLM，shm 后端）：vet + session 执行 + shell/python 捕获全链路通过。

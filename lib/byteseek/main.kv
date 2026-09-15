@@ -24,21 +24,111 @@ lib byteseek {
 				} else {
 					userinput + "\n\n[类别] " + cat + "\n\n[相关记忆]\n" + mem -> prompt
 				}
-				llm·call(prompt) -> entry
-				byteseek·run(entry)
+				kvspace·has("/byteseek/last/kind") -> hask
+				if (hask) {
+					kvspace·get("/byteseek/last/kind") -> lk
+					if (lk != "ok") {
+						kvspace·get("/byteseek/last/detail") -> ld
+						prompt + "\n\n[上轮执行未成功] " + lk + "：" + ld -> prompt
+					}
+				}
+				byteseek·solve(prompt)
 			}
 		}
 		println("bye.")
 	}
 
-	// byteseek·run(entry)：在当前 vthread（同 vid）动态调用生成程序的入口 funckey，跑完回主循环。
-	rwfunc run(entry:[]char/utf32) -> () {
-		if (entry == "") { return }
-		string·find(entry, "error") -> iserr
-		if (iserr == 0) {
-			println("[byteseek] 跳过执行（生成失败）:", entry)
-			return
+	// byteseek·solve(prompt)：生成 → 执行 → 失败回灌 → 有界重试（≤3 轮）。
+	// 失败回灌是 pi agent-loop 的 toolResult(isError) 的 KV 化：模型下一轮看得见自己错在哪。
+	rwfunc solve(prompt:[]char/utf32) -> () {
+		llm·call(prompt) -> entry
+		byteseek·run(entry) -> (kind, detail)
+		attempt = 1
+		while (kind != "ok" && attempt <= 3) {
+			byteseek·brief(detail) -> bd
+			prompt + "\n\n[上轮执行未成功] " + kind + "：" + bd + "\n请修正后重新生成（只输出 <name>/<kv>）。" -> retry
+			llm·call(retry) -> entry
+			byteseek·run(entry) -> (kind, detail)
+			attempt + 1 -> attempt
 		}
-		vthread·call(entry)
+		if (kind != "ok") {
+			println("[byteseek] 重试 3 轮仍未成功：", kind, "——", detail)
+		}
+	}
+
+	// byteseek·run(entry) -> (kind, detail)：在当前 vthread（同 vid）执行生成程序并记账。
+	//   kind   empty / truncated / vet / fail / ok
+	//   工具级失败由程序按协议写 /byteseek/last/result（"fail: 原因"）；没写 = ok。
+	rwfunc run(entry:[]char/utf32) -> (kind:[]char/utf32, detail:[]char/utf32) {
+		"" -> kind
+		"" -> detail
+		if (entry == "") {
+			"empty" -> kind
+		} else {
+			string·find(entry, "truncated") -> t
+			string·find(entry, "error") -> e
+			if (t == 0) {
+				"truncated" -> kind
+				entry -> detail
+			} else {
+				if (e == 0) {
+					"vet" -> kind
+					entry -> detail
+				} else {
+					kvspace·set("/byteseek/last/result", "")
+					vthread·create(entry) -> vid
+					char/utf32(vid) -> vid
+					if (vid == "") {
+						"runtime" -> kind
+						"入口不存在: " + entry -> detail
+					} else {
+						vthread·run(vid)
+						"/vthread/" + vid + "/‥status" -> sp
+						kvspace·get(sp) -> st
+						if (st == "error") {
+							"runtime" -> kind
+							"/vthread/" + vid + "/‥error/msg" -> ep
+							kvspace·get(ep) -> em
+							char/utf32(em) -> em
+							em -> detail
+						} else {
+							kvspace·get("/byteseek/last/result") -> rep
+							if (rep == "" || rep == "ok") {
+								"ok" -> kind
+							} else {
+								"fail" -> kind
+								rep -> detail
+							}
+						}
+					}
+				}
+			}
+		}
+		byteseek·record(kind, detail, entry)
+	}
+
+	// byteseek·record(kind, detail, entry)：一次执行的记录落 /byteseek/tool/<n>（可寻址、可复盘）。
+	rwfunc record(kind:[]char/utf32, detail:[]char/utf32, entry:[]char/utf32) -> () {
+		kvspace·listlen("/byteseek/tool/") -> n
+		string·formatint(n, 10) -> no
+		"/byteseek/tool/" + no -> path
+		byteseek·brief(detail) -> bd
+		kind + " | " + bd + " | " + entry -> rec
+		kvspace·set(path, rec)
+		kvspace·set("/byteseek/last/kind", kind)
+		kvspace·set("/byteseek/last/detail", bd)
+		if (kind != "ok") {
+			println("[byteseek] 执行未成功：", kind, "——", bd)
+		}
+	}
+
+	// brief(detail) -> s：详情截断到 300 字（整页 HTML 之类的错误体不该灌进 prompt 与记录）。
+	rwfunc brief(detail:[]char/utf32) -> (s:[]char/utf32) {
+		string·len(detail) -> n
+		if (n > 300) {
+			string·slice(detail, 0, 300) -> s
+		} else {
+			detail -> s
+		}
 	}
 }
