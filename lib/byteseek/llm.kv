@@ -4,7 +4,9 @@
 
 lib llm {
 	rwfunc call(userinput:[]char/utf32) -> (entry:[]char/utf32) {
-		kvspace·get("/byteseek/llm.key") -> key
+		key = ""
+		kvspace·has("/byteseek/llm.key") -> haskey
+		if (haskey) { kvspace·get("/byteseek/llm.key") -> key }
 		if (key == "") {
 			"error: 未设置 DEEPSEEK_API_KEY" -> entry
 			return
@@ -14,7 +16,8 @@ lib llm {
 		if (print != "0") { println("[llm] 需求:", userinput) }
 		kvspace·get("/byteseek/prompt/system") -> sys
 		kvspace·get("/lib/kvlang/kvlangbrief") -> brief
-		sys + "\n\n=== kvlang 语法速览 ===\n" + brief -> sys
+		byteseek/tools·manifest() -> tools
+		sys + "\n\n=== 可用工具（/byteseek/tools/ 树数据）===\n" + tools + "\n\n=== kvlang 语法速览 ===\n" + brief -> sys
 		"请把下面的需求翻译成一段 kvlang 程序。严格按系统提示的格式输出，只输出 <name>/<kv> 两段，不要解释：\n\n" + userinput -> user
 		sys -> /tmp/esc/sys
 		json·to(/tmp/esc/sys) -> sys_j
@@ -29,7 +32,13 @@ lib llm {
 			return
 		}
 		json·from(resp) -> /tmp/llmresp
+		llm·usage()
 		kvspace·get("/tmp/llmresp·choices·[0]·message·content") -> content
+		kvspace·get("/tmp/llmresp·choices·[0]·finish_reason") -> finish
+		if (finish == "length") {
+			"truncated: 输出被 max_tokens 截断，请重发完整的 <name>/<kv>" -> entry
+			return
+		}
 		if (content == "") {
 			"error: LLM 响应无内容: " + resp -> entry
 			return
@@ -74,7 +83,9 @@ lib llm {
 	// llm·raw(sys, user) -> text：裸 LLM 调用，返回 assistant 文本（不生成/不执行 kv 代码）。
 	// 供 memgen 等需要「LLM 直接产出一段文本」的元能力复用。
 	rwfunc raw(sys:[]char/utf32, user:[]char/utf32) -> (text:[]char/utf32) {
-		kvspace·get("/byteseek/llm.key") -> key
+		key = ""
+		kvspace·has("/byteseek/llm.key") -> haskey
+		if (haskey) { kvspace·get("/byteseek/llm.key") -> key }
 		if (key == "") {
 			"error: 未设置 DEEPSEEK_API_KEY" -> text
 			return
@@ -93,11 +104,33 @@ lib llm {
 			return
 		}
 		json·from(resp) -> /tmp/llmresp
+		llm·usage()
 		kvspace·get("/tmp/llmresp·choices·[0]·message·content") -> content
+		kvspace·get("/tmp/llmresp·choices·[0]·finish_reason") -> finish
+		if (finish == "length") {
+			"error: 输出被 max_tokens 截断（截断的回应不可用，请缩短需求或提高上限）" -> text
+			return
+		}
 		if (content == "") {
 			"error: LLM 响应无内容: " + resp -> text
 			return
 		}
 		content -> text
+	}
+
+	// llm·usage()：把本次响应的 token 用量记进 /byteseek/usage/<n>（记账入树，可复盘）。
+	rwfunc usage() -> () {
+		kvspace·listlen("/byteseek/usage/") -> n
+		string·formatint(n, 10) -> no
+		kvspace·get("/tmp/llmresp·usage·prompt_tokens") -> pt
+		kvspace·get("/tmp/llmresp·usage·completion_tokens") -> ct
+		kvspace·get("/tmp/llmresp·usage·total_tokens") -> tt
+		string·set(pt) -> pts
+		string·set(ct) -> cts
+		string·set(tt) -> tts
+		"prompt=" + pts + " completion=" + cts + " total=" + tts -> rec
+		"/byteseek/usage/" + no -> path
+		kvspace·set(path, rec)
+		kvspace·set("/byteseek/usage/last", rec)
 	}
 }

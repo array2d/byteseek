@@ -3,7 +3,7 @@
 //   recall(query) —— 记忆检查：扫描 /byteseek/memory/ 子树，自动滤出与 query 相关的关键树路径，
 //                    返回多行 "key = value"，供 mainbrain 注入 LLM 上下文。
 //   classify(msg) —— 用 LLM 把消息归入一个简短类别；类别名与消息语言相同（lang 判定，默认中文）。
-//   lang(msg) —— 判消息文字类型（假名 / 谚文 / 汉字 / 拉丁），默认中文。
+//   lang(msg) —— 语言显示名：string·lang 的 BCP-47 短码（zh/ja/ko/en）映射，默认中文。
 //   ensure_category(cat) —— 若类别不存在，则在 /byteseek/memory/cat/<cat> 新建。
 // 匹配规则：query 与 key 互相包含，或 query 与 value 互相包含（子串匹配，大小写敏感）。
 lib byteseek {
@@ -46,29 +46,13 @@ lib byteseek {
 			}
 		}
 
-		// lang(msg) —— 判消息的文字类型：假名 > 谚文 > 汉字 > 拉丁，都不命中则默认中文。
+		// lang(msg) —— 语言显示名：由 string·lang 的语言子标签映射，都不命中默认中文。
 		rwfunc lang(msg:[]char/utf32) -> (lg:[]char/utf32) {
-			han = 0
-			kana = 0
-			hangul = 0
-			latin = 0
-			string·len(msg) -> n
-			i = 0
-			while (i < n) {
-				string·char(msg, i) -> ch
-				string·ord(ch) -> c
-				if (c >= 12352) { if (c <= 12543) { kana = 1 } }     // 平/片假名
-				if (c >= 19968) { if (c <= 40959) { han = 1 } }      // 汉字
-				if (c >= 44032) { if (c <= 55215) { hangul = 1 } }   // 谚文
-				if (c >= 65) { if (c <= 90) { latin = 1 } }          // A-Z
-				if (c >= 97) { if (c <= 122) { latin = 1 } }         // a-z
-				i + 1 -> i
-			}
+			string·lang(msg) -> code
 			"中文" -> lg
-			if (latin == 1) { "English" -> lg }
-			if (han == 1) { "中文" -> lg }
-			if (hangul == 1) { "한국어" -> lg }
-			if (kana == 1) { "日本語" -> lg }
+			if (code == "en") { "English" -> lg }
+			if (code == "ja") { "日本語" -> lg }
+			if (code == "ko") { "한국어" -> lg }
 		}
 
 		rwfunc fallback_cat(lg:[]char/utf32) -> (cat:[]char/utf32) {

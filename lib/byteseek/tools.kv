@@ -1,0 +1,43 @@
+// byteseek 工具清单：工具声明也是 KV 数据——新增工具 = 往 /byteseek/tools/ 写一条，
+// system prompt 里的工具清单由 tools·manifest() 从树里生成（不再在 prompt.kv 里手写）。
+// key 用 . 连接（. 在 kvlang 里是普通字符，成员分隔符是 ·），value 是「调用签名 —— 用途」一行。
+
+lib byteseek {
+	lib tools {
+		kvspace·deltree("/byteseek/tools")
+		kvspace·set("/byteseek/tools/networld.shell.run", "networld/shell·run(cmd) -> out —— 跑 bash -c，返回 stdout")
+		kvspace·set("/byteseek/tools/networld.python.run", "networld/python·run(code) -> out —— 跑 python3 -c，返回 stdout")
+		kvspace·set("/byteseek/tools/networld.edit.read", "networld/edit·read(path, from, lines) -> (view, total, sz) —— 行号窗口视图；lines 传 0 = 到末尾")
+		kvspace·set("/byteseek/tools/byteseek.tool.edit_write", "byteseek/tool·edit_write(path, text) -> (n, code) —— 原子覆盖写（受闸门与记账；code 8 = 被策略拒绝）")
+		kvspace·set("/byteseek/tools/byteseek.tool.edit_replace", "byteseek/tool·edit_replace(path, old, new, dry) -> (done, hit, code) —— 精确替换：old 必须唯一命中，否则一个字节都不动；四个参数都要给：dry=0 落盘 / dry=1 只预演；受闸门与记账")
+		kvspace·set("/byteseek/tools/byteseek.tool.edit_multi", "byteseek/tool·edit_multi(path, olds, news, dry) -> (done, bad, code) —— 事务式多处替换，全成功才落盘；四个参数都要给：dry=0 落盘 / dry=1 只预演；受闸门与记账")
+		kvspace·set("/byteseek/tools/networld.fs.readtext", "networld/fs·readtext(path) -> (text, size) —— 读整个文件为文本")
+		kvspace·set("/byteseek/tools/networld.fs.writetext", "networld/fs·writetext(path, text) -> n —— 把文本写入文件")
+		kvspace·set("/byteseek/tools/networld.fs.glob", "networld/fs·glob(pattern) -> paths —— 按通配找文件（\\n 连接）")
+		kvspace·set("/byteseek/tools/networld.fs.grep", "networld/fs·grep(pattern, path, glob) -> hits —— 逐行查找，输出 \\\"路径:行号:文本\\\"")
+		kvspace·set("/byteseek/tools/http.get", "http·get(url) -> resp —— GET 请求")
+		kvspace·set("/byteseek/tools/http.post", "http·post(url, body) -> resp —— POST 请求")
+		kvspace·set("/byteseek/tools/string.len", "string·len(s) -> n —— 字符数")
+		kvspace·set("/byteseek/tools/kvspace.get", "kvspace·get(path) -> v —— 读 KV 树")
+		kvspace·set("/byteseek/tools/kvspace.set", "kvspace·set(path, v) —— 写 KV 树")
+
+		// manifest() -> text：把工具清单渲染成 "- 签名 —— 用途" 多行文本（名字序）。
+		rwfunc manifest() -> (text:[]char/utf32) {
+			"" -> text
+			kvspace·list("/byteseek/tools/") -> names
+			kvspace·listlen(names) -> n
+			i = 0
+			while (i < n) {
+				kvspace·listn(names, i) -> k
+				kvspace·get(names, k) -> v
+				char/utf32(v) -> v
+				if (i == 0) {
+					text + "- " + v -> text
+				} else {
+					text + "\n- " + v -> text
+				}
+				i + 1 -> i
+			}
+		}
+	}
+}
