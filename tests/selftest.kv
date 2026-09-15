@@ -1,6 +1,6 @@
 // byteseek 自检（无网络、无 LLM）：验证全 kvlang 主脑的执行链——
 //   byteseek·run(entry) → vthread·call 在当前 vthread 动态执行生成程序；
-//   shell·run / python·run 经 networld/proc·exec 捕获子进程 stdout。
+//   networld/shell·run / networld/python·run 经 networld/proc·exec 捕获子进程 stdout。
 // 先 boot byteseek 库（KVLANG_LIB=lib kvlang），再 layout 本文件，最后 run selftest·go。
 // 期望输出:
 //   vet(good)= ok
@@ -12,24 +12,63 @@ lib byteseek {
 	lib session {
 		lib demo {
 			rwfunc main() -> () {
-				shell·run("echo selftest-shell") -> o
+				networld/shell·run("echo selftest-shell") -> o
 				println("SESSION:", o)
-				python·run("print(6*7)") -> p
+				networld/python·run("print(6*7)") -> p
 				println("PY:", p)
 			}
 			byteseek/session/demo·main()
+		}
+		lib bad {
+			rwfunc main() -> () {
+				kvspace·set("/byteseek/last/result", "fail: 故意失败")
+			}
+			byteseek/session/bad·main()
+		}
+		lib boom {
+			rwfunc main() -> () {
+				no_such_tool·call() -> x
+			}
+			byteseek/session/boom·main()
 		}
 	}
 }
 
 lib selftest {
 	rwfunc go() -> () {
-		kvlanglayout·vet("rwfunc twice(a:int64) -> (b:int64) { a + a -> b }") -> v
+		kvlang·vet("rwfunc twice(a:int64) -> (b:int64) { a + a -> b }") -> v
 		println("vet(good)=", v)
-		byteseek·run("byteseek/session/demo·init")
+		byteseek·run("byteseek/session/demo·init") -> (k0, d0)
+		println("RUN:", k0)
+		byteseek·run("byteseek/session/bad·init") -> (k1, d1)
+		println("FAILKIND:", k1)
+		byteseek·run("truncated: 试") -> (k2, d2)
+		println("TRUNC:", k2)
+		byteseek·run("byteseek/session/boom·init") -> (k3, d3)
+		println("RUNTIME:", k3)
+		byteseek/tools·manifest() -> mf
+		string·len(mf) -> mlen
+		println("TOOLS:", mlen > 0)
+		kvspace·listlen("/byteseek/tool/") -> recn
+		println("REC:", recn > 0)
+		kvspace·set("/byteseek/policy/deny", "/etc\n/usr\n")
+		byteseek/tool·edit_replace("/etc/hosts", "a", "b", 0) -> (td, th, tc)
+		println("DENIED:", tc)
+		kvspace·set("/byteseek/policy/deny", "")
+		byteseek/tool·edit_write("/tmp/byteseek_tool.txt", "hello\n") -> (tn, twc)
+		byteseek/tool·edit_replace("/tmp/byteseek_tool.txt", "hello", "world", 0) -> (td2, th2, tc2)
+		println("ALLOWED:", tc2)
+		byteseek/tool·edit_replace("/tmp/byteseek_tool.txt", "world", "again") -> (td3, th3, tc3)
+		println("ARG:", tc3)
+		kvspace·listlen("/byteseek/toolcall/") -> tcn
+		println("TOOLCALL:", tcn > 0)
 		byteseek/memory·remember("theme", "byteseek 使用 kvlang 构建")
 		byteseek/memory·remember("unrelated", "今天天气不错")
 		byteseek/memory·recall("kvlang") -> m
 		println("MEM:", m)
+		networld/edit·write("/tmp/byteseek_selftest.txt", "a b\n") -> (wn, wc)
+		networld/edit·replace("/tmp/byteseek_selftest.txt", "b", "c", 0) -> (ed, eh, ec)
+		networld/fs·readtext("/tmp/byteseek_selftest.txt") -> (et, _)
+		println("EDIT:", ed, ec, et)
 	}
 }
