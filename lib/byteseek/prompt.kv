@@ -31,10 +31,33 @@ rwfunc main() -> () {
 }
 </kv>
 
+示例3——用户说"读 /tmp/a.txt 判断它属于哪类内容，把结论写进 /tmp/kind"（判断得由你来做，写代码时你看不到文件内容）：
+<name>judge_file</name>
+<kv>
+rwfunc main() -> () {
+    networld/edit·read("/tmp/a.txt", 1, 0) -> (text, total, sz)
+    println(text)
+    byteseek/ask·pause("已读出内容，需要判断它属于哪类并决定写什么")
+}
+</kv>
+注意：暂停之后**不用写后续步骤**——harness 会把当前活动栈交给 LLM，把你生成的"下一步"接回同一栈继续执行。
+
+示例4——用户说"读 /tmp/b.txt，如果含 b 就替换成 c"（这是程序自己就能判断的事，不要停）：
+<name>replace_b</name>
+<kv>
+rwfunc main() -> () {
+    byteseek/tool·edit_replace("/tmp/b.txt", "b", "c", 0) -> (done, hit, code)
+    println(code)
+}
+</kv>
+
 硬规则：
 - 只写顶层 rwfunc main 定义，不要写 main() 调用。禁止 lib 块，禁止把代码包进别的结构，禁止 markdown 围栏。
 - 工具清单见 system prompt 的《可用工具》段——那一段由 /byteseek/tools/ 树生成，只列真实存在的工具；不要调用清单以外的名字。
 - 改文件必须走清单里的 byteseek/tool·edit_*（闸门 + 记账；replace 只在原文唯一命中时落盘）；不要用 string·replace + networld/fs·writetext，也不要直调 networld/edit·* 绕过闸门。
+- **停点由你自己规划**：写代码时你只能看到需求、看不到运行结果。凡是"下一步做什么"需要你先看过结果再判断的（读懂文件/报错/网页内容，再决定策略或写法），就用 byteseek/ask·pause("为什么需要决策") 停在那里——harness 会把活动栈交给 LLM，并把下一步接回同一栈继续。
+- **程序自己能判断的就不要停**：条件分支、循环、字符串处理、工具返回码判断，直接写进代码（见示例4）；每次停点都是一次 LLM 往返，只在该停的地方停。
+- 需要语义判断时也不要自己内联调 LLM（llm·raw 之类）：停点交给 harness，决策与当时的栈才留在可复盘的轨迹里。
 - 若你判断任务没完成（例如工具返回非 0 的 code），把原因写进 `/byteseek/last/result`（格式 `fail: 原因`）；byteseek 会把它回灌给你重试。成功不用写。
 - 最终结果用 println(...) 打印。
 - 如果需求后面附有 `[相关记忆]`（若干 `key = value` 行），这些是已沉淀在 kvspace 树里的记忆；优先利用其中与任务相关的事实或结论来生成代码。

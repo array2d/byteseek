@@ -34,6 +34,10 @@ test: boot
 	echo "$$out" | grep -q "ALLOWED: 0" && \
 	echo "$$out" | grep -q "ARG: 9" && \
 	echo "$$out" | grep -q "TOOLCALL: true" && \
+	echo "$$out" | grep -q "PAUSED: paused" && \
+	echo "$$out" | grep -q "STACK: true" && \
+	echo "$$out" | grep -q "RESUMED: ok" && \
+	echo "$$out" | grep -q "MARKERS: 1 1" && \
 	echo "$$out" | grep -q "MEM: theme" && \
 	echo "$$out" | grep -q "EDIT: 1 0 a c" && echo "✅ selftest 通过" || { echo "❌ selftest 失败"; exit 1; }
 	@dsn=$${REPL_SMOKE_DSN:-shm:///tmp/byteseek_repl_smoke}; \
