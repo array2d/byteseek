@@ -1,0 +1,26 @@
+// byteseek 决策点：程序跑到需要「外部决策」（下一步该做什么）时，就地暂停本 vthread，
+// 把控制权交回 harness；harness 用 kvlang·printstack 取活动栈问 LLM，把 LLM 生成的
+// 下一步程序写进 /byteseek/next/fn，再把本 vthread 置回 running 续跑——
+// ask·pause 恢复后就地 vthread·call 那段新程序，跑完回到原函数继续。
+// 这是 #69「函数执行脑」的最小落点：停点是显式的，栈是交给 LLM 的事实。
+
+lib byteseek {
+	lib ask {
+		// pause(reason)：写暂停原因 → 暂停本 vthread → 恢复后读取 harness 注入的下一步并就地调用。
+		rwfunc pause(reason:[]char/utf32) -> () {
+			kvspace·set("/byteseek/next/reason", reason)
+			kvspace·set("/byteseek/next/fn", "")
+			vthread·setstatus("paused")
+			kvspace·has("/byteseek/next/fn") -> has
+			fn = ""
+			if (has) {
+				kvspace·get("/byteseek/next/fn") -> raw
+				char/utf32(raw) -> fn
+			}
+			if (fn != "") {
+				kvspace·set("/byteseek/next/fn", "")
+				vthread·call(fn)
+			}
+		}
+	}
+}

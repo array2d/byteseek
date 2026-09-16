@@ -111,7 +111,7 @@ byteseek 不再注册任何自有 Rust rwir。所需能力全部是 kvlang 标�
 | `print` / `println` / `cerr` / `input` | 标准 term rwir |
 | `json·to` / `json·from` | 标准 json rwir |
 | `http·call(method,header,url,body) -> resp` | 标准 http rwir |
-| `kvlang·vet / ·format / ·layout / ·dump` | 标准 layout rwir |
+| `kvlang·vet / ·format / ·layout / ·printlib` | 标准 layout rwir（printlib = 看 layout 结果，不读 .src） |
 | `networld/proc·exec(args,envs) -> code, out, err` | 标准 networld rwir（子进程 + 捕获 @ 句柄） |
 | `vthread·call(funckey)` | native builtin（同 vid 动态调用） |
 | `string·* / kv·* / xv·*` | native builtin |

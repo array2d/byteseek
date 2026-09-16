@@ -38,30 +38,48 @@ lib byteseek {
 		println("bye.")
 	}
 
-	// byteseek·solve(prompt)：生成 → 执行 → 失败回灌 → 有界重试（≤3 轮）。
-	// 失败回灌是 pi agent-loop 的 toolResult(isError) 的 KV 化：模型下一轮看得见自己错在哪。
+	// byteseek·solve(prompt)：生成 → 执行 → （失败回灌 | 停点决策）→ 有界重试（≤4 轮）。
+	// 失败回灌 = pi 的 toolResult(isError) 的 KV 化；停点决策 = 把活动栈交给 LLM 定下一步（#69）。
 	rwfunc solve(prompt:[]char/utf32) -> () {
 		llm·call(prompt) -> entry
-		byteseek·run(entry) -> (kind, detail)
-		attempt = 1
-		while (kind != "ok" && attempt <= 3) {
+		byteseek·run(entry) -> (kind, detail, vid)
+		round = 1
+		while (kind != "ok" && round <= 4) {
 			byteseek·brief(detail) -> bd
-			prompt + "\n\n[上轮执行未成功] " + kind + "：" + bd + "\n请修正后重新生成（只输出 <name>/<kv>）。" -> retry
-			llm·call(retry) -> entry
-			byteseek·run(entry) -> (kind, detail)
-			attempt + 1 -> attempt
+			if (kind == "paused") {
+				// 停点：把活动栈交给 LLM，让它只补「下一步」，由暂停中的 vthread 就地接上
+				kvlang·printstack(vid) -> stack
+				prompt + "\n\n[任务执行到停点，需要你决定下一步]\n" + stack + "\n[暂停原因] " + bd + "\n请只输出 <name>/<kv>：一段补充的 kvlang 程序，它会就地接在停点继续执行。" -> askprompt
+				llm·call(askprompt) -> next
+				string·find(next, "error") -> ne
+				string·find(next, "truncated") -> nt
+				if (ne == 0 || nt == 0) {
+					"vet" -> kind
+					next -> detail
+				} else {
+					byteseek·resume(vid, next)
+					byteseek·classify(vid) -> (kind, detail)
+				}
+			} else {
+				prompt + "\n\n[上轮执行未成功] " + kind + "：" + bd + "\n请修正后重新生成（只输出 <name>/<kv>）。" -> retry
+				llm·call(retry) -> entry
+				byteseek·run(entry) -> (kind, detail, vid)
+			}
+			round + 1 -> round
 		}
 		if (kind != "ok") {
-			println("[byteseek] 重试 3 轮仍未成功：", kind, "——", detail)
+			println("[byteseek] 4 轮内仍未成功：", kind, "——", detail)
 		}
 	}
 
-	// byteseek·run(entry) -> (kind, detail)：在当前 vthread（同 vid）执行生成程序并记账。
-	//   kind   empty / truncated / vet / fail / ok
+	// byteseek·run(entry) -> (kind, detail, vid)：开子 vthread 执行生成程序并记账。
+	//   kind   empty / truncated / vet / fail / runtime / paused / ok
 	//   工具级失败由程序按协议写 /byteseek/last/result（"fail: 原因"）；没写 = ok。
-	rwfunc run(entry:[]char/utf32) -> (kind:[]char/utf32, detail:[]char/utf32) {
+	rwfunc run(entry:[]char/utf32) -> (kind:[]char/utf32, detail:[]char/utf32,
+	                                  vid:[]char/utf32) {
 		"" -> kind
 		"" -> detail
+		"" -> vid
 		if (entry == "") {
 			"empty" -> kind
 		} else {
@@ -83,28 +101,55 @@ lib byteseek {
 						"入口不存在: " + entry -> detail
 					} else {
 						vthread·run(vid)
-						"/vthread/" + vid + "/‥status" -> sp
-						kvspace·get(sp) -> st
-						if (st == "error") {
-							"runtime" -> kind
-							"/vthread/" + vid + "/‥error/msg" -> ep
-							kvspace·get(ep) -> em
-							char/utf32(em) -> em
-							em -> detail
-						} else {
-							kvspace·get("/byteseek/last/result") -> rep
-							if (rep == "" || rep == "ok") {
-								"ok" -> kind
-							} else {
-								"fail" -> kind
-								rep -> detail
-							}
-						}
+						byteseek·classify(vid) -> (kind, detail)
 					}
 				}
 			}
 		}
 		byteseek·record(kind, detail, entry)
+	}
+
+	// byteseek·classify(vid) -> (kind, detail)：读子 vthread 的终态/停点与程序自报。
+	//   error→runtime（带 /vthread/<vid>/‥error/msg）；paused→paused（带暂停原因）；
+	//   其余看 /byteseek/last/result：""/"ok"→ok，其他→fail。
+	rwfunc classify(vid:[]char/utf32) -> (kind:[]char/utf32, detail:[]char/utf32) {
+		"" -> kind
+		"" -> detail
+		"/vthread/" + vid + "/‥status" -> sp
+		kvspace·get(sp) -> st
+		if (st == "error") {
+			"runtime" -> kind
+			"/vthread/" + vid + "/‥error/msg" -> ep
+			kvspace·get(ep) -> em
+			char/utf32(em) -> em
+			em -> detail
+		} else {
+			if (st == "paused") {
+				"paused" -> kind
+				kvspace·has("/byteseek/next/reason") -> hr
+				if (hr) {
+					kvspace·get("/byteseek/next/reason") -> rr
+					char/utf32(rr) -> detail
+				}
+			} else {
+				kvspace·get("/byteseek/last/result") -> rep
+				if (rep == "" || rep == "ok") {
+					"ok" -> kind
+				} else {
+					"fail" -> kind
+					rep -> detail
+				}
+			}
+		}
+	}
+
+	// byteseek·resume(vid, fn)：把 LLM 生成的下一步入口写进 /byteseek/next/fn，
+	// 把暂停中的 vthread 置回 running 再驱动——暂停点里的 ask·pause 恢复后会就地调用它。
+	rwfunc resume(vid:[]char/utf32, fn:[]char/utf32) -> () {
+		kvspace·set("/byteseek/next/fn", fn)
+		"/vthread/" + vid + "/‥status" -> sp
+		kvspace·set(sp, "running")
+		vthread·run(vid)
 	}
 
 	// byteseek·record(kind, detail, entry)：一次执行的记录落 /byteseek/tool/<n>（可寻址、可复盘）。

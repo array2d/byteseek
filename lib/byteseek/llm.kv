@@ -64,6 +64,15 @@ lib llm {
 			println("[llm] 生成代码:")
 			println(kv)
 		}
+		// 名字唯一化：同名会覆盖已入库的函数树——暂停中的帧还指着它，续跑/重跑都会踩。
+		kvspace·has("/lib/byteseek/session/" + name) -> taken
+		suffix = 1
+		while (taken) {
+			suffix + 1 -> suffix
+			string·formatint(suffix, 10) -> sn
+			name + "_" + sn -> name
+			kvspace·has("/lib/byteseek/session/" + name) -> taken
+		}
 		"lib byteseek {\nlib session {\nlib " + name + " {\n" + kv + "\nbyteseek/session/" + name + "·main()\n}\n}\n}\n" -> wrapped
 		kvlang·vet(wrapped) -> v
 		if (v != "ok") {

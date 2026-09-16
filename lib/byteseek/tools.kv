@@ -11,6 +11,7 @@ lib byteseek {
 		kvspace·set("/byteseek/tools/byteseek.tool.edit_write", "byteseek/tool·edit_write(path, text) -> (n, code) —— 原子覆盖写（受闸门与记账；code 8 = 被策略拒绝）")
 		kvspace·set("/byteseek/tools/byteseek.tool.edit_replace", "byteseek/tool·edit_replace(path, old, new, dry) -> (done, hit, code) —— 精确替换：old 必须唯一命中，否则一个字节都不动；四个参数都要给：dry=0 落盘 / dry=1 只预演；受闸门与记账")
 		kvspace·set("/byteseek/tools/byteseek.tool.edit_multi", "byteseek/tool·edit_multi(path, olds, news, dry) -> (done, bad, code) —— 事务式多处替换，全成功才落盘；四个参数都要给：dry=0 落盘 / dry=1 只预演；受闸门与记账")
+		kvspace·set("/byteseek/tools/byteseek.ask.pause", "byteseek/ask·pause(reason) —— 停点：需要先看到这一步的结果才能决定下一步时调用；本 vthread 就地暂停，harness 拿活动栈问 LLM，再把下一步接回同一栈续跑")
 		kvspace·set("/byteseek/tools/networld.fs.readtext", "networld/fs·readtext(path) -> (text, size) —— 读整个文件为文本")
 		kvspace·set("/byteseek/tools/networld.fs.writetext", "networld/fs·writetext(path, text) -> n —— 把文本写入文件")
 		kvspace·set("/byteseek/tools/networld.fs.glob", "networld/fs·glob(pattern) -> paths —— 按通配找文件（\\n 连接）")

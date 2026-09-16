@@ -31,6 +31,18 @@ lib byteseek {
 			}
 			byteseek/session/boom·main()
 		}
+		lib waiter {
+			rwfunc main() -> () {
+				kvspace·set("/byteseek/selftest/before", "1")
+				byteseek/ask·pause("测试停点")
+				kvspace·set("/byteseek/selftest/after", "1")
+			}
+		}
+		lib step2 {
+			rwfunc main() -> () {
+				kvspace·set("/byteseek/selftest/injected", "1")
+			}
+		}
 	}
 }
 
@@ -62,6 +74,16 @@ lib selftest {
 		println("ARG:", tc3)
 		kvspace·listlen("/byteseek/toolcall/") -> tcn
 		println("TOOLCALL:", tcn > 0)
+		byteseek·run("byteseek/session/waiter·main") -> (pk, pd, pvid)
+		println("PAUSED:", pk)
+		kvlang·printstack(pvid) -> pst
+		println("STACK:", string·contains(pst, "status=paused"))
+		byteseek·resume(pvid, "byteseek/session/step2·main")
+		byteseek·classify(pvid) -> (rk, rd)
+		println("RESUMED:", rk)
+		kvspace·get("/byteseek/selftest/injected") -> inj
+		kvspace·get("/byteseek/selftest/after") -> aft
+		println("MARKERS:", inj, aft)
 		byteseek/memory·remember("theme", "byteseek 使用 kvlang 构建")
 		byteseek/memory·remember("unrelated", "今天天气不错")
 		byteseek/memory·recall("kvlang") -> m
