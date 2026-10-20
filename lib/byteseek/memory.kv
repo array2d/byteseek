@@ -18,7 +18,7 @@ lib byteseek {
 			kvspace·listlen("/byteseek/memory/") -> n
 			i = 0
 			while (i < n) {
-				kvspace·listn("/byteseek/memory/", i) -> key
+				kvspace·listat("/byteseek/memory/", i) -> key
 				char/utf32(key) -> key
 				if (key != "cat") {
 					"/byteseek/memory/" + key -> path

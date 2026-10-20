@@ -25,12 +25,13 @@ lib byteseek {
 		// manifest() -> text：把工具清单渲染成 "- 签名 —— 用途" 多行文本（名字序）。
 		rwfunc manifest() -> (text:[]char/utf32) {
 			"" -> text
-			kvspace·list("/byteseek/tools/") -> names
-			kvspace·listlen(names) -> n
+			kvspace·listlen("/byteseek/tools/") -> n
 			i = 0
 			while (i < n) {
-				kvspace·listn(names, i) -> k
-				kvspace·get(names, k) -> v
+				kvspace·listat("/byteseek/tools/", i) -> k8
+				char/utf32(k8) -> k
+				"/byteseek/tools/" + k -> kp
+				kvspace·get(kp) -> v
 				char/utf32(v) -> v
 				if (i == 0) {
 					text + "- " + v -> text
