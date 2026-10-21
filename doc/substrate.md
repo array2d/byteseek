@@ -149,10 +149,10 @@ pi 的 toolResult 边界在 byteseek 里落到 KV 树上：
 | 回灌 | `byteseek·solve(prompt)` | 失败把 `[上轮执行未成功] kind：detail` 拼回 prompt，有界重试 ≤3 轮 |
 
 kind 分类：`truncated`（被 max_tokens 截断）/ `vet`（生成物不过闸）/ `runtime`（子 vthread 报错，
-读 `/vthread/<vid>/‥error/msg`）/ `fail`（程序自报失败）/ `ok` / `empty`。
+读 `/vthread/<vid>/‥msg`）/ `fail`（程序自报失败）/ `ok` / `empty`。
 
 配套 runtime 语义：`vthread·run(vid)` 下**子 vthread 自己失败不再冒泡杀死父**——监督者活着读
-`/vthread/<vid>/‥status` 与 `‥error/msg`（一个子任务失败不该结束整条会话）。
+`/vthread/<vid>/‥status` 与 `‥msg`（一个子任务失败不该结束整条会话）。
 
 落盘是原子的：`networld/edit·write/replace/multi` 都走 `networld/edit·commit` —— 写 `<p>.tmp`
 → `networld/fs·rename` 覆盖 p → 回读校验；失败时 p 保持原样，不留半截文件。

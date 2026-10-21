@@ -110,7 +110,7 @@ lib byteseek {
 	}
 
 	// byteseek·classify(vid) -> (kind, detail)：读子 vthread 的终态/停点与程序自报。
-	//   error→runtime（带 /vthread/<vid>/‥error/msg）；paused→paused（带暂停原因）；
+	//   error→runtime（带 /vthread/<vid>/‥msg）；paused→paused（带暂停原因）；
 	//   其余看 /byteseek/last/result：""/"ok"→ok，其他→fail。
 	rwfunc classify(vid:[]char/utf32) -> (kind:[]char/utf32, detail:[]char/utf32) {
 		"" -> kind
@@ -119,7 +119,7 @@ lib byteseek {
 		kvspace·get(sp) -> st
 		if (st == "error") {
 			"runtime" -> kind
-			"/vthread/" + vid + "/‥error/msg" -> ep
+			"/vthread/" + vid + "/‥msg" -> ep
 			kvspace·get(ep) -> em
 			char/utf32(em) -> em
 			em -> detail
