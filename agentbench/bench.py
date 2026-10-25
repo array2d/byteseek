@@ -64,13 +64,13 @@ def kv_literal(text):
 
 
 def boot_byteseek():
-    env = dict(os.environ, KVLANG_LIB="lib", KVSPACE=KVSPACE)
-    r = subprocess.run([KVLANG], cwd=REPO, env=env, capture_output=True, text=True)
+    env = dict(os.environ, KVSPACE=KVSPACE)
+    r = subprocess.run([KVLANG, "--lib", "lib"], cwd=REPO, env=env, capture_output=True, text=True)
     if r.returncode != 0:
         die(2, f"byteseek 引导失败：\n{r.stdout}{r.stderr}")
     if not kvspace_get("/lib/llm·call/[0,0]"):
         die(2, "byteseek 未就绪：/lib/llm·call 缺失——lib/llm.kv 与当前 kvlang 版本不兼容"
-               "（`KVLANG_LIB=lib kvlang` 的完整报错见上）。修好 lib 再跑 --agent byteseek。")
+               "（`kvlang --lib lib` 的完整报错见上）。修好 lib 再跑 --agent byteseek。")
     return r.stdout + r.stderr
 
 
@@ -300,7 +300,7 @@ def cmd_env(_a):
         r = subprocess.run(["kvspace", "get", key], capture_output=True, text=True,
                            env=dict(os.environ, KVSPACE=KVSPACE))
         ok = "(nil)" not in r.stdout
-        print(f"kvspace {key:<22} {'已种入' if ok else '未种入（先 KVLANG_LIB=lib kvlang）'}")
+        print(f"kvspace {key:<22} {'已种入' if ok else '未种入（先 kvlang --lib lib）'}")
     return 0
 
 

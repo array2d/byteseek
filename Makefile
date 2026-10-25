@@ -13,7 +13,7 @@ deps:
 	./ci/deps.sh
 
 boot:
-	KVLANG_LIB=lib kvlang
+	kvlang --lib lib
 
 run: boot
 	kvlang byteseek·main
@@ -41,7 +41,7 @@ test: boot
 	echo "$$out" | grep -q "MEM: theme" && \
 	echo "$$out" | grep -q "EDIT: 1 0 a c" && echo "✅ selftest 通过" || { echo "❌ selftest 失败"; exit 1; }
 	@dsn=$${REPL_SMOKE_DSN:-shm:///tmp/byteseek_repl_smoke}; \
-	KVLANG_LIB=lib KVSPACE=$$dsn kvlang >/dev/null 2>&1; \
+	KVSPACE=$$dsn kvlang --lib lib >/dev/null 2>&1; \
 	KVSPACE=$$dsn kvlang -c 'kvspace·del("/byteseek/llm.key") -> _' >/dev/null 2>&1; \
 	out=$$(printf 'hi\nexit\n' | KVSPACE=$$dsn timeout 120 kvlang byteseek·main 2>&1); \
 	echo "$$out" | grep -q "bye." && ! echo "$$out" | grep -q "TypeError" && echo "✅ repl 冒烟通过" || { echo "❌ repl 冒烟失败"; echo "$$out" | tail -5; exit 1; }

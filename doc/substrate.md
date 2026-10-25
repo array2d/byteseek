@@ -29,11 +29,11 @@ vendor: kvlang stdlib        工具能力全在 stdlib——networld/shell·run 
 byteseek 无「拉起进程」一说。两步：
 
 ```bash
-KVLANG_LIB=lib kvlang        # 引导：layout lib/ 全部 .kv 进 kvspace，并执行各 init
+kvlang --lib lib             # 引导：layout lib/ 全部 .kv 进 kvspace，并执行各 init
 kvlang byteseek·main         # 运行：驱动已入库的 funckey（进入 REPL）
 ```
 
-`KVLANG_LIB=lib kvlang`（无 entry）复用标准 kvlang 的「layout 全部 lib + 跑各 init」机制：
+`kvlang --lib lib`（无位置入口）复用标准 kvlang 的「layout 全部 lib + 跑各 init」机制：
 `config.kv`/`prompt.kv` 的顶层写语句被 parser 合成为 `local·init` / `byteseek/prompt·init`，
 在 layout 期执行一次，把配置、系统提示种进 kvspace（跑完即删 init 子树）。kvlang 语法速览
 （`kvlangbrief`）由 **kvlang 自己的 stdlib**（`kvlang/stdlib/kvlangbrief.kv`，lib kvlang）在
@@ -159,7 +159,7 @@ kind 分类：`truncated`（被 max_tokens 截断）/ `vet`（生成物不过闸
 
 ## 已验证（0rs）
 
-- `KVLANG_LIB=lib kvlang` 引导：config/语法速览/系统提示三 init 于 layout 期种入，rwfunc 持久。
+- `kvlang --lib lib` 引导：config/语法速览/系统提示三 init 于 layout 期种入，rwfunc 持久。
 - `kvlang byteseek·main`：REPL 循环、`exit` 退出、无 key 时 `llm·call` 回填 error 且 `byteseek·run` 跳过。
 - `byteseek·run(entry)` → `vthread·call`：同 vid 动态执行入库的 session 程序，其内 rwir 就地派发。
 - `networld/shell·run` / `networld/python·run`：经 `networld/proc·exec` 捕获子进程 stdout 并透明兑现。
