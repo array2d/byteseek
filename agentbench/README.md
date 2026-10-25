@@ -101,5 +101,5 @@ byteseek 现在只跟 kvlang 最新 release（`ci/deps.sh`，无 deps.json），
 | `llm.kv` / `memory.kv` / `memgen.kv` | `kv·get/set/has/listlen/listn` | `kvspace·get/set/has/listlen/listn` |
 | `llm.kv` | `kvlanglayout·vet/layout` | `kvlang·vet/layout` |
 
-自检：`KVLANG_LIB=lib kvlang` 无 layout 报错，`/lib/{llm·call,shell·run,python·run}` 均在；
+自检：`kvlang --lib lib` 无 layout 报错，`/lib/{llm·call,shell·run,python·run}` 均在；
 `shell·run` / `python·run` 冒烟输出正确；`--agent byteseek` 可跑完整链路。

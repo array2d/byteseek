@@ -6,14 +6,13 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 export KVSPACE=${KVSPACE:-redis://127.0.0.1:6379}
-export KVLANG_LIB=lib
 
 D=/tmp/stopplan
 mkdir -p "$D"
 printf 'x\nb\ny\n' > "$D/b.txt"
 printf 'def f(x):\n    return x + 1\n' > "$D/a.txt"
 
-KVLANG_LIB=lib kvlang >/dev/null 2>&1 || { echo "byteseek 引导失败"; exit 2; }
+kvlang --lib lib >/dev/null 2>&1 || { echo "byteseek 引导失败"; exit 2; }
 
 run_case() { # $1=用例名 $2=期望(0|1) $3=任务
   local name=$1 want=$2 task=$3 log="/tmp/stopplan-$1.log"

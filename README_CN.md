@@ -7,7 +7,7 @@ byteseek 没有自己的宿主语言，也不是可执行文件：它**就是**�
 `kvlang` 工具链驱动。
 
 ```bash
-KVLANG_LIB=lib kvlang        # 引导：layout lib/ 全部 .kv 进 kvspace，并执行各 init
+kvlang --lib lib             # 引导：layout lib/ 全部 .kv 进 kvspace，并执行各 init
 kvlang byteseek·main         # 运行：驱动已入库的 funckey（进入 REPL）
 ```
 

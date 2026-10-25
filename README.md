@@ -8,7 +8,7 @@ become first-class citizens of this tree through kvlang's standard rwir and kv
 *is* a tree of `.kv` code, driven by the standard `kvlang` toolchain.
 
 ```bash
-KVLANG_LIB=lib kvlang        # boot: lay all lib/*.kv into kvspace, run each init
+kvlang --lib lib             # boot: lay all lib/*.kv into kvspace, run each init
 kvlang byteseek·main         # run: drive the already-laid-out funckey (REPL)
 ```
 
